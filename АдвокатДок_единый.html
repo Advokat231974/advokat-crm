@@ -23847,6 +23847,26 @@ details:not([open]) .row-actions{display:none}
         </div>
       </div>
       <div class="sheet">
+        <h2>Уведомления в Telegram</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Раз в день, пока база открыта в браузере, отправляет короткую сводку боту
+          <span class="mono">@adamov_advokat_bot</span> — сколько дел с горящим сроком и сколько
+          просрочек оплаты. Сами дела, ФИО и суммы никуда не уходят — только числа.
+        </p>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" id="notifyEnabled" style="width:auto">
+          <span>Включить ежедневную сводку</span>
+        </label>
+        <div class="field" style="margin-top:12px">
+          <label for="notifyToken">Токен для сервера (вставить в .env бота как NOTIFY_TOKEN)</label>
+          <input id="notifyToken" class="mono" readonly>
+        </div>
+        <div class="hint" id="notifyStatus" style="margin:8px 0"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="notifyTestBtn">Отправить сейчас (проверка)</button>
+        </div>
+      </div>
+      <div class="sheet">
         <h2>Сеанс</h2>
         <div class="row-actions">
           <button class="btn ghost" id="lockBtn">Закрыть базу</button>
@@ -25255,7 +25275,8 @@ function blankDb(){
     courts: blankCourts(),
     policeDepartments: [],
     settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', counters:{schet:1,akt:1}, lastBackupAt:'',
-      googleConnected:false, lastSyncPushAt:'', lastSyncPullAt:'', advocate:{
+      googleConnected:false, lastSyncPushAt:'', lastSyncPullAt:'',
+      notifyEnabled:false, notifyToken:'', lastNotifyPushAt:'', advocate:{
       name:'Адамов Тажиб Таривердиевич', registry:'77/9954',
       cert:'№ 16184 от 11.05.2017',
       address:'127422, г. Москва, Дмитровский проезд, д. 4, корп. 3, офис 101',
@@ -25499,6 +25520,9 @@ function migrateDb(db){
   if(db.settings.googleConnected==null) db.settings.googleConnected=false;
   if(db.settings.lastSyncPushAt==null) db.settings.lastSyncPushAt='';
   if(db.settings.lastSyncPullAt==null) db.settings.lastSyncPullAt='';
+  if(db.settings.notifyEnabled==null) db.settings.notifyEnabled=false;
+  if(db.settings.notifyToken==null) db.settings.notifyToken='';
+  if(db.settings.lastNotifyPushAt==null) db.settings.lastNotifyPushAt='';
   const adv=db.settings.advocate=db.settings.advocate||{};
   ['education','inn','kpp','rs','bank','bik','ks'].forEach(k=>{ if(adv[k]==null) adv[k]=''; });
   db.cases=(db.cases||[]).map(c=>{
@@ -25632,6 +25656,7 @@ async function unlock(){
   $('lock').style.display='none';
   $('app').style.display='flex';
   renderList(); renderCourts(); renderOrgs(); renderStat();
+  pushDailyNotify();
 }
 
 /* =====================================================================
@@ -25660,6 +25685,7 @@ $('menuBtn').onclick=()=>{
   $('advRs').value=adv.rs||''; $('advBank').value=adv.bank||'';
   $('advBik').value=adv.bik||''; $('advKs').value=adv.ks||'';
   renderSyncPanel();
+  renderNotifyPanel();
   show('viewMenu');
 };
 $('saveDokUrl').onclick=async()=>{
@@ -26748,6 +26774,78 @@ $('syncPullBtn').onclick=async()=>{
   finally{ $('syncPullBtn').textContent='Загрузить с Диска'; renderSyncPanel(); }
 };
 $('syncDisconnectBtn').onclick=()=>{ Sync.disconnect(); renderSyncPanel(); toast('Отключено от Google Диска'); };
+
+/* ---------- ежедневная сводка в Telegram-бот (сроки/оплата, без данных дел) ---------- */
+const NOTIFY_URL='https://advokat-adamov.ru/notify-api/push';
+
+function ensureNotifyToken(){
+  if(!DB.settings.notifyToken){
+    const bytes=crypto.getRandomValues(new Uint8Array(24));
+    DB.settings.notifyToken=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  return DB.settings.notifyToken;
+}
+
+function notifySummaryText(){
+  let urgent=0;
+  DB.cases.forEach(c=>(c.deadlines||[]).forEach(d=>{
+    if(d.status==='done') return;
+    if(deadlineTone(d).cls==='alarm') urgent++;
+  }));
+  const overdueCount=DB.cases.filter(c=>c.type==='appointment' && typeof paymentOverdueDays(c)==='number' && paymentOverdueDays(c)>0).length;
+  if(!urgent && !overdueCount) return null;
+  const parts=[];
+  if(urgent) parts.push(`горящих сроков — ${urgent}`);
+  if(overdueCount) parts.push(`просрочек оплаты — ${overdueCount}`);
+  return 'АдвокатДок: '+parts.join(', ')+'.';
+}
+
+async function sendNotify(text){
+  const r=await fetch(NOTIFY_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+ensureNotifyToken()},
+    body:JSON.stringify({text})
+  });
+  if(!r.ok) throw new Error('сервер ответил '+r.status);
+}
+
+async function pushDailyNotify(){
+  if(!DB.settings.notifyEnabled) return;
+  const today=now().slice(0,10);
+  if(DB.settings.lastNotifyPushAt===today) return;
+  const text=notifySummaryText();
+  try{
+    if(text) await sendNotify(text);
+    DB.settings.lastNotifyPushAt=today;
+    await saveDb();
+  }catch(e){ console.warn('notify push failed:',e.message); }
+}
+
+function renderNotifyPanel(){
+  const box=$('notifyStatus'); if(!box) return;
+  $('notifyEnabled').checked=!!DB.settings.notifyEnabled;
+  $('notifyToken').value=ensureNotifyToken();
+  box.textContent = DB.settings.lastNotifyPushAt
+    ? 'Последняя отправка: '+new Date(DB.settings.lastNotifyPushAt).toLocaleDateString('ru-RU')
+    : 'Отправок ещё не было.';
+}
+$('notifyEnabled').onchange=async()=>{
+  DB.settings.notifyEnabled=$('notifyEnabled').checked;
+  ensureNotifyToken();
+  await saveDb();
+  renderNotifyPanel();
+  if(DB.settings.notifyEnabled) toast('Сводка включена. Не забудьте вписать токен в NOTIFY_TOKEN на сервере.');
+};
+$('notifyTestBtn').onclick=async()=>{
+  $('notifyTestBtn').textContent='Отправка…';
+  try{
+    await sendNotify(notifySummaryText()||'АдвокатДок: проверка связи — горящих дел и просрочек сейчас нет.');
+    DB.settings.lastNotifyPushAt=now().slice(0,10);
+    await saveDb();
+    toast('Отправлено, проверьте Telegram');
+  }catch(e){ toast('Не удалось отправить: '+e.message); }
+  finally{ $('notifyTestBtn').textContent='Отправить сейчас (проверка)'; renderNotifyPanel(); }
+};
 
 /* ---------- импорт из АдвокатДок (раздел 14 ТЗ) ---------- */
 // ДД.ММ.ГГГГ → ISO YYYY-MM-DD. Пустое/битое значение → ''.
