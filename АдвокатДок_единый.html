@@ -23475,6 +23475,10 @@ details:not([open]) .row-actions{display:none}
             </select>
           </div>
         </div>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:12px">
+          <input type="checkbox" id="fSensitive" style="width:auto">
+          <span>Повышенная защищённость (поиск с телефона по этому делу — только по паролю)</span>
+        </label>
       </div>
 
       <div class="sheet">
@@ -23864,6 +23868,23 @@ details:not([open]) .row-actions{display:none}
         <div class="hint" id="notifyStatus" style="margin:8px 0"></div>
         <div class="row-actions">
           <button class="btn ghost sm" id="notifyTestBtn">Отправить сейчас (проверка)</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Поиск дела из бота</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Раз в день отправляет на сервер краткий список дел — ФИО, статья, статус, ближайший срок —
+          чтобы бот мог мгновенно находить дело по фамилии или номеру. Дела с галочкой
+          «Повышенная защищённость» в список не попадают: бот знает только, что такое дело есть,
+          и просит пароль от базы, прежде чем показать что-либо по нему.
+        </p>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px">
+          <input type="checkbox" id="searchEnabled" style="width:auto">
+          <span>Разрешить поиск дел из бота</span>
+        </label>
+        <div class="hint" id="searchStatus" style="margin:8px 0"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="searchPushBtn">Обновить список сейчас</button>
         </div>
       </div>
       <div class="sheet">
@@ -25276,7 +25297,8 @@ function blankDb(){
     policeDepartments: [],
     settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', counters:{schet:1,akt:1}, lastBackupAt:'',
       googleConnected:false, lastSyncPushAt:'', lastSyncPullAt:'',
-      notifyEnabled:false, notifyToken:'', lastNotifyPushAt:'', advocate:{
+      notifyEnabled:false, notifyToken:'', lastNotifyPushAt:'',
+      searchEnabled:false, lastIndexPushAt:'', advocate:{
       name:'Адамов Тажиб Таривердиевич', registry:'77/9954',
       cert:'№ 16184 от 11.05.2017',
       address:'127422, г. Москва, Дмитровский проезд, д. 4, корп. 3, офис 101',
@@ -25523,10 +25545,13 @@ function migrateDb(db){
   if(db.settings.notifyEnabled==null) db.settings.notifyEnabled=false;
   if(db.settings.notifyToken==null) db.settings.notifyToken='';
   if(db.settings.lastNotifyPushAt==null) db.settings.lastNotifyPushAt='';
+  if(db.settings.searchEnabled==null) db.settings.searchEnabled=false;
+  if(db.settings.lastIndexPushAt==null) db.settings.lastIndexPushAt='';
   const adv=db.settings.advocate=db.settings.advocate||{};
   ['education','inn','kpp','rs','bank','bik','ks'].forEach(k=>{ if(adv[k]==null) adv[k]=''; });
   db.cases=(db.cases||[]).map(c=>{
     c.deadlines=c.deadlines||[]; c.events=c.events||[]; c.documents=c.documents||[];
+    if(c.sensitive==null) c.sensitive=false;
     c.investigation=c.investigation||{};
     c.finance=c.finance||{};
     c.finance.appointment=c.finance.appointment||{days:[]};
@@ -25657,6 +25682,7 @@ async function unlock(){
   $('app').style.display='flex';
   renderList(); renderCourts(); renderOrgs(); renderStat();
   pushDailyNotify();
+  pushDailyIndex();
 }
 
 /* =====================================================================
@@ -25686,6 +25712,7 @@ $('menuBtn').onclick=()=>{
   $('advBik').value=adv.bik||''; $('advKs').value=adv.ks||'';
   renderSyncPanel();
   renderNotifyPanel();
+  renderSearchPanel();
   show('viewMenu');
 };
 $('saveDokUrl').onclick=async()=>{
@@ -25961,6 +25988,7 @@ function openCase(id){
   $('fInvestigator').value=g(c,'investigator',draft&&draft.org||'');
   $('fInvPhone').value=g(c,'investigatorPhone',draft&&draft.phone||'');
   $('fStatus').value=g(c,'status','active');
+  $('fSensitive').checked=!!(c&&c.sensitive);
   $('fRestraint').value=c&&c.restraint?c.restraint.type||'':'';
   $('fRestraintUntil').value=c&&c.restraint?c.restraint.dateUntil||'':'';
   $('fRequestNo').value=g(c,'requestNo',draft&&draft.requestNo||'');
@@ -26425,6 +26453,7 @@ $('saveCase').onclick=async()=>{
   c.investigator=$('fInvestigator').value.trim();
   c.investigatorPhone=$('fInvPhone').value.trim();
   c.status=$('fStatus').value;
+  c.sensitive=$('fSensitive').checked;
   c.restraint={type:$('fRestraint').value,dateUntil:$('fRestraintUntil').value};
   c.requestNo=$('fRequestNo').value.trim();
   c.requestUrl=$('fRequestUrl').value.trim();
@@ -26845,6 +26874,96 @@ $('notifyTestBtn').onclick=async()=>{
     toast('Отправлено, проверьте Telegram');
   }catch(e){ toast('Не удалось отправить: '+e.message); }
   finally{ $('notifyTestBtn').textContent='Отправить сейчас (проверка)'; renderNotifyPanel(); }
+};
+
+/* ---------- поиск дела из бота: индекс на сервере + защищённые дела по паролю ---------- */
+const INDEX_URL='https://advokat-adamov.ru/index-api/push';
+
+async function sha256Hex(str){
+  const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf), b=>b.toString(16).padStart(2,'0')).join('');
+}
+const normCaseNumber=s=>(s||'').trim().toLowerCase().replace(/\s+/g,'');
+
+function caseNextDeadline(c){
+  const open=(c.deadlines||[]).filter(d=>d.status!=='done'&&d.computedDate);
+  if(!open.length) return '';
+  return open.slice().sort((a,b)=>a.computedDate.localeCompare(b.computedDate))[0].computedDate;
+}
+function caseSearchRow(c){
+  const cl=clientOf(c);
+  const od=c.type==='appointment'?paymentOverdueDays(c):null;
+  return {
+    id:c.id,
+    number:c.number||'',
+    fio:(cl&&cl.name&&cl.name.nom)||'',
+    article:c.articles||'',
+    status:c.status||'',
+    nextDeadline:caseNextDeadline(c),
+    overdueDays: typeof od==='number'&&od>0 ? od : 0
+  };
+}
+
+async function buildIndexPayload(){
+  const plain=[], sensitiveRows=[], sensitiveIndex=[];
+  for(const c of DB.cases){
+    if(c.status==='archived') continue;
+    if(c.sensitive){
+      const row=caseSearchRow(c);
+      sensitiveRows.push(row);
+      if(c.number) sensitiveIndex.push({id:c.id, numberHash: await sha256Hex(normCaseNumber(c.number))});
+    } else {
+      plain.push(caseSearchRow(c));
+    }
+  }
+  const sensitiveBlob = sensitiveRows.length ? await Crypt.seal({cases:sensitiveRows}, KEY) : null;
+  if(sensitiveBlob) sensitiveBlob.salt=Crypt.b64(SALT);
+  return {plain, sensitiveIndex, sensitiveBlob};
+}
+
+async function pushCaseIndex(){
+  const payload=await buildIndexPayload();
+  const r=await fetch(INDEX_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+ensureNotifyToken()},
+    body:JSON.stringify(payload)
+  });
+  if(!r.ok) throw new Error('сервер ответил '+r.status);
+}
+
+async function pushDailyIndex(){
+  if(!DB.settings.searchEnabled) return;
+  const today=now().slice(0,10);
+  if(DB.settings.lastIndexPushAt===today) return;
+  try{
+    await pushCaseIndex();
+    DB.settings.lastIndexPushAt=today;
+    await saveDb();
+  }catch(e){ console.warn('index push failed:',e.message); }
+}
+
+function renderSearchPanel(){
+  const box=$('searchStatus'); if(!box) return;
+  $('searchEnabled').checked=!!DB.settings.searchEnabled;
+  box.textContent = DB.settings.lastIndexPushAt
+    ? 'Последнее обновление: '+new Date(DB.settings.lastIndexPushAt).toLocaleDateString('ru-RU')
+    : 'Список ещё не отправлялся.';
+}
+$('searchEnabled').onchange=async()=>{
+  DB.settings.searchEnabled=$('searchEnabled').checked;
+  ensureNotifyToken();
+  await saveDb();
+  renderSearchPanel();
+};
+$('searchPushBtn').onclick=async()=>{
+  $('searchPushBtn').textContent='Отправка…';
+  try{
+    await pushCaseIndex();
+    DB.settings.lastIndexPushAt=now().slice(0,10);
+    await saveDb();
+    toast('Список для поиска обновлён');
+  }catch(e){ toast('Не удалось отправить: '+e.message); }
+  finally{ $('searchPushBtn').textContent='Обновить список сейчас'; renderSearchPanel(); }
 };
 
 /* ---------- импорт из АдвокатДок (раздел 14 ТЗ) ---------- */
