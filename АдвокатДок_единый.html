@@ -23888,6 +23888,17 @@ details:not([open]) .row-actions{display:none}
         </div>
       </div>
       <div class="sheet">
+        <h2>Входящие из бота</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Даты, которые ты присылал боту текстом или скриншотом — можно добавить как день участия
+          в нужное дело, не открывая карточку заново.
+        </p>
+        <div id="pendingList"><p class="hint">Загрузка…</p></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="pendingRefreshBtn">Обновить список</button>
+        </div>
+      </div>
+      <div class="sheet">
         <h2>Сеанс</h2>
         <div class="row-actions">
           <button class="btn ghost" id="lockBtn">Закрыть базу</button>
@@ -25713,6 +25724,7 @@ $('menuBtn').onclick=()=>{
   renderSyncPanel();
   renderNotifyPanel();
   renderSearchPanel();
+  renderPendingList();
   show('viewMenu');
 };
 $('saveDokUrl').onclick=async()=>{
@@ -26915,8 +26927,10 @@ function caseSearchRow(c){
 
 async function buildIndexPayload(){
   const plain=[], sensitiveRows=[], sensitiveIndex=[];
+  const busySet=new Set();
   for(const c of DB.cases){
     if(c.status==='archived') continue;
+    (c.finance&&c.finance.appointment&&c.finance.appointment.days||[]).forEach(d=>{ if(d.date) busySet.add(d.date); });
     if(c.sensitive){
       const row=caseSearchRow(c);
       sensitiveRows.push(row);
@@ -26927,7 +26941,7 @@ async function buildIndexPayload(){
   }
   const sensitiveBlob = sensitiveRows.length ? await Crypt.seal({cases:sensitiveRows}, KEY) : null;
   if(sensitiveBlob) sensitiveBlob.salt=Crypt.b64(SALT);
-  return {plain, sensitiveIndex, sensitiveBlob};
+  return {plain, sensitiveIndex, sensitiveBlob, busyDates:Array.from(busySet)};
 }
 
 async function pushCaseIndex(){
@@ -26974,6 +26988,71 @@ $('searchPushBtn').onclick=async()=>{
   }catch(e){ toast('Не удалось отправить: '+e.message); }
   finally{ $('searchPushBtn').textContent='Обновить список сейчас'; renderSearchPanel(); }
 };
+
+/* ---------- входящие из бота: даты, распознанные из сообщений/скриншотов ---------- */
+const PENDING_LIST_URL='https://advokat-adamov.ru/pending-api/list';
+const PENDING_ACK_URL='https://advokat-adamov.ru/pending-api/ack';
+
+function pendingCaseOptions(){
+  return DB.cases.filter(c=>c.status!=='archived').map(c=>{
+    const cl=clientOf(c);
+    const fio=(cl&&cl.name&&cl.name.nom)||'без ФИО';
+    return `<option value="${c.id}">${esc(fio)}${c.number?' · №'+esc(c.number):''}</option>`;
+  }).join('');
+}
+
+async function renderPendingList(){
+  const box=$('pendingList'); if(!box) return;
+  let items;
+  try{
+    const r=await fetch(PENDING_LIST_URL,{headers:{'Authorization':'Bearer '+ensureNotifyToken()}});
+    if(!r.ok) throw new Error('сервер ответил '+r.status);
+    items=await r.json();
+  }catch(e){ box.innerHTML='<p class="hint" style="color:var(--alarm)">Не удалось загрузить: '+esc(e.message)+'</p>'; return; }
+  if(!items.length){ box.innerHTML='<p class="hint">Пока пусто.</p>'; return; }
+  const options=pendingCaseOptions();
+  box.innerHTML=items.map(it=>{
+    const dateFmt=it.date?it.date.split('-').reverse().join('.'):'—';
+    return `<div class="sheet" style="margin-bottom:8px;padding:12px">
+      <div style="margin-bottom:8px"><b class="mono">${esc(dateFmt)}${it.time?' '+esc(it.time):''}</b>
+        ${it.num?' · заявка №'+esc(it.num):''}${it.district?' · '+esc(it.district):''}</div>
+      <select data-pid="${esc(it.id)}" class="pendingCaseSelect"><option value="">— выбрать дело —</option>${options}</select>
+      <div class="row-actions" style="margin-top:8px">
+        <button class="btn ghost sm pendingAddBtn" data-pid="${esc(it.id)}" data-date="${esc(it.date)}" data-num="${esc(it.num||'')}">Добавить как день участия</button>
+        <button class="btn ghost sm pendingSkipBtn" data-pid="${esc(it.id)}">Скрыть</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('.pendingAddBtn').forEach(btn=>btn.onclick=async()=>{
+    const pid=btn.dataset.pid, date=btn.dataset.date, num=btn.dataset.num;
+    const sel=box.querySelector(`.pendingCaseSelect[data-pid="${pid}"]`);
+    const caseId=sel&&sel.value;
+    if(!caseId){ toast('Выберите дело'); return; }
+    const c=DB.cases.find(x=>x.id===caseId);
+    if(!c){ toast('Дело не найдено'); return; }
+    c.finance=c.finance||{}; c.finance.appointment=c.finance.appointment||{days:[]};
+    c.finance.appointment.days=c.finance.appointment.days||[];
+    const info=Deadlines.dayInfo(date, DB.calendar);
+    c.finance.appointment.days.push({id:uid(), date, tip: info.nonworking?'vykh':'budn', action: num?('Заявка №'+num):''});
+    c.updatedAt=now();
+    await saveDb();
+    await pendingAck(pid);
+    toast('День добавлен в дело');
+    renderPendingList();
+  });
+  box.querySelectorAll('.pendingSkipBtn').forEach(btn=>btn.onclick=async()=>{
+    await pendingAck(btn.dataset.pid);
+    renderPendingList();
+  });
+}
+async function pendingAck(id){
+  try{
+    await fetch(PENDING_ACK_URL,{method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+ensureNotifyToken()},
+      body:JSON.stringify({id})});
+  }catch(e){ console.warn('pending ack failed:',e.message); }
+}
+$('pendingRefreshBtn').onclick=renderPendingList;
 
 /* ---------- импорт из АдвокатДок (раздел 14 ТЗ) ---------- */
 // ДД.ММ.ГГГГ → ISO YYYY-MM-DD. Пустое/битое значение → ''.
