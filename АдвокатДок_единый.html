@@ -23273,6 +23273,14 @@ main{flex:1;padding:var(--sp);max-width:1000px;width:100%;margin:0 auto;
 .sheet h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted);font-family:'JetBrains Mono',monospace;
   font-weight:500;margin-bottom:14px}
+/* Свёрнутые по умолчанию длинные списки (суды и т.п.) — открываются по клику. */
+summary.collapsible-h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-family:'JetBrains Mono',monospace;
+  font-weight:500;cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px}
+summary.collapsible-h2::-webkit-details-marker{display:none}
+summary.collapsible-h2::before{content:'▸';font-size:11px;color:var(--accent);transition:transform .12s}
+details[open] summary.collapsible-h2::before{transform:rotate(90deg)}
+details:not([open]) .row-actions{display:none}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 @media(max-width:620px){.grid2{grid-template-columns:1fr}}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
@@ -23785,11 +23793,13 @@ main{flex:1;padding:var(--sp);max-width:1000px;width:100%;margin:0 auto;
         </div>
       </div>
       <div class="sheet">
-        <h2>Суды</h2>
-        <div id="courtList"></div>
-        <div class="row-actions">
-          <button class="btn ghost sm" id="addCourt">Добавить суд</button>
-        </div>
+        <details>
+          <summary class="collapsible-h2">Суды <span class="hint" id="courtCount" style="font-weight:400;text-transform:none;letter-spacing:normal"></span></summary>
+          <div id="courtList" style="margin-top:12px"></div>
+          <div class="row-actions">
+            <button class="btn ghost sm" id="addCourt">Добавить суд</button>
+          </div>
+        </details>
       </div>
       <div class="sheet">
         <h2>Органы, отделы полиции</h2>
@@ -26713,6 +26723,7 @@ function renderStat(){
 }
 
 function renderCourts(){
+  if($('courtCount')) $('courtCount').textContent='· '+DB.courts.length;
   $('courtList').innerHTML=DB.courts.map(c=>`
     <button class="case" data-id="${c.id}"
       style="padding:8px 10px 8px 16px;margin-bottom:0;border-radius:0;border-left:none;border-right:none;border-top:none">
