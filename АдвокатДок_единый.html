@@ -26890,8 +26890,15 @@ function caseNextDeadline(c){
   if(!open.length) return '';
   return open.slice().sort((a,b)=>a.computedDate.localeCompare(b.computedDate))[0].computedDate;
 }
+const STAGE_LABELS={pre_investigation:'доследственная проверка', first_instance:'первая инстанция',
+  appeal:'апелляция', cassation:'кассация', execution:'исполнение приговора', closed:'завершено'};
+function caseStageLabel(c){
+  if(c.stage==='investigation') return c.investigation&&c.investigation.dolzh==='dozn'?'дознание':'следствие';
+  return STAGE_LABELS[c.stage]||c.stage||'';
+}
 function caseSearchRow(c){
   const cl=clientOf(c);
+  const ct=courtOf(c);
   const od=c.type==='appointment'?paymentOverdueDays(c):null;
   return {
     id:c.id,
@@ -26899,6 +26906,8 @@ function caseSearchRow(c){
     fio:(cl&&cl.name&&cl.name.nom)||'',
     article:c.articles||'',
     status:c.status||'',
+    stage:caseStageLabel(c),
+    court:ct?ct.name:'',
     nextDeadline:caseNextDeadline(c),
     overdueDays: typeof od==='number'&&od>0 ? od : 0
   };
