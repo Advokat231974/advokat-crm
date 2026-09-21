@@ -7,6 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>АдвокатДок — реестр дел</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>var docx = (function(exports) {
   "use strict";var __defProp = Object.defineProperty;
 var __defProps = Object.defineProperties;
@@ -23829,6 +23830,23 @@ details:not([open]) .row-actions{display:none}
         </div>
       </div>
       <div class="sheet">
+        <h2>Синхронизация с Google Диском</h2>
+        <p class="hint" style="margin:0 0 12px">
+          База (в зашифрованном виде, тем же паролем, что и локально) сохраняется в закрытую папку
+          приложения на вашем Google Диске — её не видно среди обычных файлов и не видит никто, кроме
+          этого приложения. Отправка и загрузка — вручную, автоматического слияния изменений пока нет:
+          если работаете с двух устройств, каждый раз перед началом работы жмите «Загрузить с Диска»,
+          а закончив — «Отправить на Диск».
+        </p>
+        <div class="hint" id="syncStatus" style="margin-bottom:12px"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="syncConnectBtn">Войти через Google</button>
+          <button class="btn ghost sm" id="syncPushBtn" style="display:none">Отправить на Диск</button>
+          <button class="btn ghost sm" id="syncPullBtn" style="display:none">Загрузить с Диска</button>
+          <button class="btn ghost sm" id="syncDisconnectBtn" style="display:none">Отключить</button>
+        </div>
+      </div>
+      <div class="sheet">
         <h2>Сеанс</h2>
         <div class="row-actions">
           <button class="btn ghost" id="lockBtn">Закрыть базу</button>
@@ -25236,7 +25254,8 @@ function blankDb(){
     cases:[], clients:[],
     courts: blankCourts(),
     policeDepartments: [],
-    settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', counters:{schet:1,akt:1}, lastBackupAt:'', advocate:{
+    settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', counters:{schet:1,akt:1}, lastBackupAt:'',
+      googleConnected:false, lastSyncPushAt:'', lastSyncPullAt:'', advocate:{
       name:'Адамов Тажиб Таривердиевич', registry:'77/9954',
       cert:'№ 16184 от 11.05.2017',
       address:'127422, г. Москва, Дмитровский проезд, д. 4, корп. 3, офис 101',
@@ -25477,6 +25496,9 @@ function migrateDb(db){
   if(db.settings.advokatDokUrl==null) db.settings.advokatDokUrl='';
   if(db.settings.counters==null) db.settings.counters={schet:1,akt:1};
   if(db.settings.lastBackupAt==null) db.settings.lastBackupAt='';
+  if(db.settings.googleConnected==null) db.settings.googleConnected=false;
+  if(db.settings.lastSyncPushAt==null) db.settings.lastSyncPushAt='';
+  if(db.settings.lastSyncPullAt==null) db.settings.lastSyncPullAt='';
   const adv=db.settings.advocate=db.settings.advocate||{};
   ['education','inn','kpp','rs','bank','bik','ks'].forEach(k=>{ if(adv[k]==null) adv[k]=''; });
   db.cases=(db.cases||[]).map(c=>{
@@ -25637,6 +25659,7 @@ $('menuBtn').onclick=()=>{
   $('advInn').value=adv.inn||''; $('advKpp').value=adv.kpp||'';
   $('advRs').value=adv.rs||''; $('advBank').value=adv.bank||'';
   $('advBik').value=adv.bik||''; $('advKs').value=adv.ks||'';
+  renderSyncPanel();
   show('viewMenu');
 };
 $('saveDokUrl').onclick=async()=>{
@@ -26576,6 +26599,155 @@ async function doBackup(){
   toast('Копия сохранена. Держите её отдельно от компьютера.');
 }
 $('expBtn').onclick=doBackup;
+
+/* ---------- синхронизация с Google Диском (appDataFolder, раздел 3 ТЗ) ---------- */
+const GOOGLE_CLIENT_ID='342986901822-0r6iirgh07uara84fc3d26sdlonpba47.apps.googleusercontent.com';
+const GOOGLE_SCOPE='https://www.googleapis.com/auth/drive.appdata';
+const SYNC_FILENAME='advokat-crm-sync.json';
+
+const Sync=(function(){
+  let tokenClient=null, accessToken=null, tokenExpiresAt=0, fileId=null;
+
+  function gisReady(){ return !!(window.google && google.accounts && google.accounts.oauth2); }
+
+  function requestToken(interactive){
+    return new Promise((resolve,reject)=>{
+      if(!gisReady()){ reject(new Error('Google ещё не загрузился. Проверьте интернет-соединение и обновите страницу.')); return; }
+      if(!tokenClient){
+        tokenClient=google.accounts.oauth2.initTokenClient({client_id:GOOGLE_CLIENT_ID, scope:GOOGLE_SCOPE, callback:()=>{}});
+      }
+      tokenClient.callback=(resp)=>{
+        if(resp && resp.error){ reject(new Error(resp.error)); return; }
+        accessToken=resp.access_token;
+        tokenExpiresAt=Date.now()+((resp.expires_in||3600)*1000)-30000;
+        resolve(accessToken);
+      };
+      tokenClient.error_callback=(err)=>reject(new Error((err&&err.type)||'Вход отменён'));
+      tokenClient.requestAccessToken({prompt:interactive?'consent':''});
+    });
+  }
+
+  async function getToken(){
+    if(accessToken && Date.now()<tokenExpiresAt) return accessToken;
+    return requestToken(true);
+  }
+
+  async function apiFetch(url,opts){
+    const token=await getToken();
+    opts=opts||{};
+    opts.headers=Object.assign({},opts.headers,{Authorization:'Bearer '+token});
+    const r=await fetch(url,opts);
+    if(!r.ok){
+      const t=await r.text().catch(()=>'');
+      throw new Error('Google Диск ответил с ошибкой '+r.status+(t?(': '+t.slice(0,200)):''));
+    }
+    return r;
+  }
+
+  async function findFile(){
+    const r=await apiFetch('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q='+encodeURIComponent(`name='${SYNC_FILENAME}' and trashed=false`));
+    const j=await r.json();
+    fileId=(j.files&&j.files[0]&&j.files[0].id)||null;
+    return fileId;
+  }
+
+  async function connect(){
+    await requestToken(true);
+    DB.settings.googleConnected=true;
+    await saveDb();
+  }
+
+  async function push(){
+    const pack=await Crypt.seal(DB,KEY);
+    const payload={format:'advokat-crm-backup',v:1,salt:Crypt.b64(SALT),iv:pack.iv,ct:pack.ct,savedAt:now(),cases:DB.cases.length};
+    const body=JSON.stringify(payload);
+    await findFile();
+    const metadata=fileId?{}:{name:SYNC_FILENAME,parents:['appDataFolder']};
+    const boundary='crmsync'+uid();
+    const multipart=
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`+
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${boundary}--`;
+    const url=fileId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`
+      : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart`;
+    const r=await apiFetch(url,{method:fileId?'PATCH':'POST',headers:{'Content-Type':`multipart/related; boundary=${boundary}`},body:multipart});
+    const j=await r.json();
+    fileId=j.id||fileId;
+    DB.settings.lastSyncPushAt=now();
+    await saveDb();
+  }
+
+  async function pullAndApply(){
+    await findFile();
+    if(!fileId) throw new Error('На Диске пока нет ни одной копии — сначала нажмите «Отправить на Диск».');
+    const r=await apiFetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+    const j=await r.json();
+    if(j.format!=='advokat-crm-backup') throw new Error('Файл на Диске повреждён или в неизвестном формате.');
+    let data;
+    try{
+      data=await Crypt.unseal({iv:j.iv,ct:j.ct},KEY);
+    }catch(e){
+      const salt=Crypt.unb64(j.salt);
+      const pw=prompt('Копия на Диске зашифрована другим паролем. Введите пароль, которым она была сохранена:');
+      if(pw==null) throw new Error('Отменено');
+      const key=await Crypt.deriveKey(pw,salt);
+      data=await Crypt.unseal({iv:j.iv,ct:j.ct},key);
+      SALT=salt; KEY=key;
+    }
+    DB=migrateDb(data);
+    DB.settings.lastSyncPullAt=now();
+    await saveDb();
+  }
+
+  function disconnect(){
+    if(accessToken && gisReady()){
+      try{ google.accounts.oauth2.revoke(accessToken,()=>{}); }catch(e){}
+    }
+    accessToken=null; tokenExpiresAt=0; fileId=null;
+    if(DB){ DB.settings.googleConnected=false; saveDb(); }
+  }
+
+  return {connect, push, pullAndApply, disconnect,
+    isConnected:()=>!!(DB && DB.settings && DB.settings.googleConnected)};
+})();
+
+function renderSyncPanel(){
+  const box=$('syncStatus'); if(!box) return;
+  const connected=Sync.isConnected();
+  const s=DB.settings;
+  const fmt=t=>t?new Date(t).toLocaleString('ru-RU'):'ещё не было';
+  box.innerHTML = connected
+    ? `Подключено к Google Диску.<br>Отправка на Диск: <span class="mono">${fmt(s.lastSyncPushAt)}</span><br>Загрузка с Диска: <span class="mono">${fmt(s.lastSyncPullAt)}</span>`
+    : 'Не подключено.';
+  $('syncConnectBtn').style.display = connected ? 'none' : '';
+  $('syncPushBtn').style.display = connected ? '' : 'none';
+  $('syncPullBtn').style.display = connected ? '' : 'none';
+  $('syncDisconnectBtn').style.display = connected ? '' : 'none';
+}
+$('syncConnectBtn').onclick=async()=>{
+  $('syncConnectBtn').textContent='Вход…';
+  try{ await Sync.connect(); toast('Подключено к Google Диску'); }
+  catch(e){ toast('Не удалось подключиться: '+e.message); }
+  finally{ $('syncConnectBtn').textContent='Войти через Google'; renderSyncPanel(); }
+};
+$('syncPushBtn').onclick=async()=>{
+  $('syncPushBtn').textContent='Отправка…';
+  try{ await Sync.push(); toast('База отправлена на Диск'); }
+  catch(e){ toast('Не удалось отправить: '+e.message); }
+  finally{ $('syncPushBtn').textContent='Отправить на Диск'; renderSyncPanel(); }
+};
+$('syncPullBtn').onclick=async()=>{
+  if(!confirm('Загрузка с Диска заменит текущую базу в этом окне целиком. Несохранённые на Диск изменения будут потеряны. Продолжить?')) return;
+  $('syncPullBtn').textContent='Загрузка…';
+  try{
+    await Sync.pullAndApply();
+    toast('База загружена с Диска: дел — '+DB.cases.length);
+    renderList(); renderCourts(); renderOrgs(); renderStat();
+  }
+  catch(e){ toast('Не удалось загрузить: '+e.message); }
+  finally{ $('syncPullBtn').textContent='Загрузить с Диска'; renderSyncPanel(); }
+};
+$('syncDisconnectBtn').onclick=()=>{ Sync.disconnect(); renderSyncPanel(); toast('Отключено от Google Диска'); };
 
 /* ---------- импорт из АдвокатДок (раздел 14 ТЗ) ---------- */
 // ДД.ММ.ГГГГ → ISO YYYY-MM-DD. Пустое/битое значение → ''.
