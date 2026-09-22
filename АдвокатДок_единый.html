@@ -26081,6 +26081,29 @@ function guessCourt(district){
   const c=DB.courts.find(x=>x.name.toLowerCase().startsWith(district.trim().toLowerCase().slice(0,6)));
   return c?c.id:'';
 }
+
+// Справочник следователей/начальников «по памяти» — ищем последнее дело
+// с тем же органом и подставляем оттуда ФИО, если поля ещё пустые.
+function suggestFromOrgan(organText){
+  const norm=(organText||'').trim().toLowerCase();
+  if(!norm) return null;
+  const matches=DB.cases.filter(c=>c.id!==editingId && c.investigation &&
+    (c.investigation.organFull||'').trim().toLowerCase()===norm &&
+    (c.investigation.dolzhFio||c.investigation.nachOd||c.investigation.nachOmvd));
+  if(!matches.length) return null;
+  matches.sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+  const m=matches[0].investigation;
+  return {dolzhFio:m.dolzhFio||'', nachOd:m.nachOd||'', nachOmvd:m.nachOmvd||''};
+}
+$('fOrganFull').addEventListener('change',()=>{
+  const sug=suggestFromOrgan($('fOrganFull').value);
+  if(!sug) return;
+  let filled=false;
+  if(!$('fDolzhFio').value.trim() && sug.dolzhFio){ $('fDolzhFio').value=sug.dolzhFio; filled=true; }
+  if(!$('fNachOd').value.trim() && sug.nachOd){ $('fNachOd').value=sug.nachOd; filled=true; }
+  if(!$('fNachOmvd').value.trim() && sug.nachOmvd){ $('fNachOmvd').value=sug.nachOmvd; filled=true; }
+  if(filled) toast('ФИО подставлены из предыдущего дела с этим органом — проверьте');
+});
 function draftNote(d){
   const l=[];
   if(d.kind) l.push('Основание: '+d.kind);
