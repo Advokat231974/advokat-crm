@@ -25770,6 +25770,16 @@ $('q').oninput=renderList;
 
 function clientOf(c){return DB.clients.find(x=>x.id===c.clientId)||null;}
 function courtOf(c){return DB.courts.find(x=>x.id===c.courtId)||null;}
+// Если суд в деле явно не выбран (частый случай у импортированных дел),
+// пробуем угадать его по тексту органа/следователя — по совпадению начала
+// названия района (без учёта падежа: «Тушинскому району» тоже подходит).
+function courtForCase(c){
+  const direct=courtOf(c);
+  if(direct) return direct;
+  const text=(((c.investigation&&c.investigation.organFull)||'')+' '+(c.investigator||'')).toLowerCase();
+  if(!text.trim()) return null;
+  return DB.courts.find(x=>text.includes(x.name.toLowerCase().slice(0,7)))||null;
+}
 
 function renderBurning(){
   const items=[];
@@ -25818,7 +25828,7 @@ function paymentOverdueDays(c){
 async function generateForCase(c, kind, builder){
   const cl=clientOf(c);
   if(!cl||!cl.name||!cl.name.nom){toast('У дела не указано ФИО доверителя');return;}
-  const ct=courtOf(c);
+  const ct=courtForCase(c);
   try{
     const {doc,filename}=await builder(c,cl,DB.settings.advocate,{courtName:ct?ct.name:''});
     const blob=await docx.Packer.toBlob(doc);
@@ -26297,7 +26307,7 @@ async function generateAndSave(kind, builder){
   c.finance=c.finance||{}; c.finance.appointment=c.finance.appointment||{days:[]};
   c.finance.appointment.days=editDays.map(d=>Object.assign({},d));
   c.investigation=c.investigation||{}; c.investigation.podpunkt=currentPodpunkt();
-  const ct=courtOf(c);
+  const ct=courtForCase(c);
   const ctx={courtName: ct?ct.name:''};
   try{
     const {doc,filename}=await builder(c,cl,DB.settings.advocate,ctx);
@@ -26910,7 +26920,7 @@ function caseStageLabel(c){
 }
 function caseSearchRow(c){
   const cl=clientOf(c);
-  const ct=courtOf(c);
+  const ct=courtForCase(c);
   const od=c.type==='appointment'?paymentOverdueDays(c):null;
   return {
     id:c.id,
