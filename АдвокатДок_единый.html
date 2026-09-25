@@ -26336,9 +26336,17 @@ function formatTimeRange(raw){
 $('dayTime').addEventListener('input',()=>{
   $('dayTime').value=formatTimeRange($('dayTime').value);
 });
+// Если ввели одно время без диапазона (напр. «14:00») и ушли из поля —
+// маска успела приписать тире в расчёте на продолжение. Убираем его.
+$('dayTime').addEventListener('blur',()=>{
+  const v=$('dayTime').value;
+  if(v.endsWith('-')) $('dayTime').value=v.slice(0,-1);
+});
 
 $('addDay').onclick=()=>{
-  const date=$('dayDate').value, tip=$('dayTip').value, action=$('dayAction').value.trim(), time=$('dayTime').value.trim();
+  const date=$('dayDate').value, tip=$('dayTip').value, action=$('dayAction').value.trim();
+  let time=$('dayTime').value.trim();
+  if(time.endsWith('-')) time=time.slice(0,-1);
   if(!date){toast('Укажите дату');return;}
   editDays.push({id:uid(),date,tip,action,time});
   $('dayDate').value=''; $('dayAction').value=''; $('dayTime').value='';
