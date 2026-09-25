@@ -23616,6 +23616,10 @@ details:not([open]) .row-actions{display:none}
             <div class="hint" id="dayTipHint" style="margin-top:5px"></div>
           </div>
           <div class="field">
+            <label for="dayTime">Время</label>
+            <input id="dayTime" inputmode="numeric" autocomplete="off" placeholder="11:00-13:00">
+          </div>
+          <div class="field">
             <label for="dayAction">Действие</label>
             <input id="dayAction" list="actionsList" autocomplete="off" placeholder="Допрос подозреваемого">
             <datalist id="actionsList">
@@ -25572,7 +25576,7 @@ function migrateDb(db){
     c.investigation=c.investigation||{};
     c.finance=c.finance||{};
     c.finance.appointment=c.finance.appointment||{days:[]};
-    c.finance.appointment.days=(c.finance.appointment.days||[]).map(d=>{ d.id=d.id||uid(); return d; });
+    c.finance.appointment.days=(c.finance.appointment.days||[]).map(d=>{ d.id=d.id||uid(); if(d.time==null) d.time=''; return d; });
     return c;
   });
   db.clients=(db.clients||[]).map(cl=>{
@@ -26271,7 +26275,7 @@ function renderDays(){
     const sum=Finance.getStavka(d.date,d.tip,podpunkt);
     return `<div style="display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px" data-id="${d.id}">
       <div>
-        <div class="mono">${d.date?esc(Deadlines.fmt(d.date)):'—'} · ${esc(DAY_TIP_LABEL[d.tip]||d.tip||'')}</div>
+        <div class="mono">${d.date?esc(Deadlines.fmt(d.date)):'—'} · ${esc(DAY_TIP_LABEL[d.tip]||d.tip||'')}${d.time?' · '+esc(d.time):''}</div>
         <div class="hint">${esc(d.action||'')}</div>
       </div>
       <div style="text-align:right;display:flex;gap:8px;align-items:center">
@@ -26317,11 +26321,27 @@ function syncNachLabels(){
 }
 $('fDolzh').addEventListener('change',syncNachLabels);
 
+// Маска времени: цифры набираются подряд, разделители «:» и «-» подставляются
+// сами — «1100» → «11:00», «11001300» → «11:00-13:00».
+function formatTimeRange(raw){
+  const d=(raw||'').replace(/\D/g,'').slice(0,8);
+  let out='';
+  for(let i=0;i<d.length;i++){
+    out+=d[i];
+    if(i===1||i===5) out+=':';
+    else if(i===3) out+='-';
+  }
+  return out;
+}
+$('dayTime').addEventListener('input',()=>{
+  $('dayTime').value=formatTimeRange($('dayTime').value);
+});
+
 $('addDay').onclick=()=>{
-  const date=$('dayDate').value, tip=$('dayTip').value, action=$('dayAction').value.trim();
+  const date=$('dayDate').value, tip=$('dayTip').value, action=$('dayAction').value.trim(), time=$('dayTime').value.trim();
   if(!date){toast('Укажите дату');return;}
-  editDays.push({id:uid(),date,tip,action});
-  $('dayDate').value=''; $('dayAction').value='';
+  editDays.push({id:uid(),date,tip,action,time});
+  $('dayDate').value=''; $('dayAction').value=''; $('dayTime').value='';
   const h=$('dayTipHint'); if(h) h.textContent='';
   renderDays();
 };
