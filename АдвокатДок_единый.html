@@ -23461,10 +23461,6 @@ details:not([open]) .row-actions{display:none}
             <input id="fRoom">
           </div>
           <div class="field">
-            <label for="fOrgPick">Орган (быстрый выбор из справочника)</label>
-            <select id="fOrgPick"><option value="">не выбран</option></select>
-          </div>
-          <div class="field">
             <label for="fInvestigator">Следователь, дознаватель, орган</label>
             <input id="fInvestigator">
           </div>
@@ -23535,7 +23531,8 @@ details:not([open]) .row-actions{display:none}
           </div>
           <div class="field">
             <label for="fDolzhFio">ФИО следователя/дознавателя (им. падеж)</label>
-            <input id="fDolzhFio" placeholder="Иванова И. И.">
+            <input id="fDolzhFio" list="dolzhFioList" autocomplete="off" placeholder="Иванова И. И.">
+            <datalist id="dolzhFioList"></datalist>
           </div>
           <div class="field">
             <label for="fDolzh">Кто ведёт дело</label>
@@ -23575,11 +23572,13 @@ details:not([open]) .row-actions{display:none}
           </div>
           <div class="field">
             <label for="fNachOd" id="fNachOdLabel">ФИО начальника следствия (СО)</label>
-            <input id="fNachOd" placeholder="Петров П. П.">
+            <input id="fNachOd" list="nachOdList" autocomplete="off" placeholder="Петров П. П.">
+            <datalist id="nachOdList"></datalist>
           </div>
           <div class="field" id="fNachOmvdWrap">
             <label for="fNachOmvd">ФИО начальника отдела (ОМВД)</label>
-            <input id="fNachOmvd" placeholder="Сидоров С. С.">
+            <input id="fNachOmvd" list="nachOmvdList" autocomplete="off" placeholder="Сидоров С. С.">
+            <datalist id="nachOmvdList"></datalist>
           </div>
         </div>
         <div class="gen-block">
@@ -25316,6 +25315,7 @@ function blankDb(){
     cases:[], clients:[],
     courts: blankCourts(),
     policeDepartments: [],
+    staffBook: [],
     settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', counters:{schet:1,akt:1}, lastBackupAt:'',
       googleConnected:false, lastSyncPushAt:'', lastSyncPullAt:'',
       notifyEnabled:false, notifyToken:'', lastNotifyPushAt:'',
@@ -25552,6 +25552,7 @@ function blankCourts(){
 function migrateDb(db){
   db.courts=db.courts||blankCourts();
   db.policeDepartments=db.policeDepartments||[];
+  db.staffBook=db.staffBook||[];
   db.deadlineTypes=db.deadlineTypes||blankDeadlineTypes();
   db.calendar=db.calendar||blankCalendar();
   db.settings=db.settings||{};
@@ -25997,7 +25998,6 @@ function fillCourts(sel){
 function openCase(id){
   editingId=id;
   fillCourts();
-  fillOrgPick();
   const c=id?DB.cases.find(x=>x.id===id):null;
   const cl=c?clientOf(c):null;
   const g=(o,k,d)=>o&&o[k]!=null?o[k]:(d||'');
@@ -26016,7 +26016,6 @@ function openCase(id){
   $('fCourt').value=g(c,'courtId',draft?guessCourt(draft.district):'');
   $('fJudge').value=g(c,'judge');
   $('fRoom').value=g(c,'courtroom');
-  $('fOrgPick').value='';
   $('fInvestigator').value=g(c,'investigator',draft&&draft.org||'');
   $('fInvPhone').value=g(c,'investigatorPhone',draft&&draft.phone||'');
   $('fStatus').value=g(c,'status','active');
@@ -26039,6 +26038,7 @@ function openCase(id){
   $('fNachOd').value=gi('nachOd');
   $('fNachOmvd').value=gi('nachOmvd');
   syncNachLabels();
+  refreshStaffLists();
   $('fNotes').value=g(c,'notes',draft?draftNote(draft):'');
 
   $('delCase').style.display=id?'':'none';
@@ -26092,28 +26092,43 @@ function guessCourt(district){
   return c?c.id:'';
 }
 
-// Справочник следователей/начальников «по памяти» — ищем последнее дело
-// с тем же органом и подставляем оттуда ФИО, если поля ещё пустые.
-function suggestFromOrgan(organText){
+// Справочник следователей/дознавателей/начальников (DB.staffBook), пополняется
+// автоматически при каждом сохранении дела. Ключ органа — известный район Москвы,
+// если он упоминается в тексте органа (тогда «ОД Митино» и «ОД ОМВД России по
+// району Митино г. Москвы» считаются одним органом), иначе — весь нормализованный
+// текст органа целиком (точное совпадение).
+function orgKeyOf(organText){
   const norm=(organText||'').trim().toLowerCase();
-  if(!norm) return null;
-  const matches=DB.cases.filter(c=>c.id!==editingId && c.investigation &&
-    (c.investigation.organFull||'').trim().toLowerCase()===norm &&
-    (c.investigation.dolzhFio||c.investigation.nachOd||c.investigation.nachOmvd));
-  if(!matches.length) return null;
-  matches.sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
-  const m=matches[0].investigation;
-  return {dolzhFio:m.dolzhFio||'', nachOd:m.nachOd||'', nachOmvd:m.nachOmvd||''};
+  if(!norm) return '';
+  const r=RAIONS_MOSCOW.find(x=>norm.includes(x.short.toLowerCase()));
+  return r?r.short.toLowerCase():norm;
 }
-$('fOrganFull').addEventListener('change',()=>{
-  const sug=suggestFromOrgan($('fOrganFull').value);
-  if(!sug) return;
-  let filled=false;
-  if(!$('fDolzhFio').value.trim() && sug.dolzhFio){ $('fDolzhFio').value=sug.dolzhFio; filled=true; }
-  if(!$('fNachOd').value.trim() && sug.nachOd){ $('fNachOd').value=sug.nachOd; filled=true; }
-  if(!$('fNachOmvd').value.trim() && sug.nachOmvd){ $('fNachOmvd').value=sug.nachOmvd; filled=true; }
-  if(filled) toast('ФИО подставлены из предыдущего дела с этим органом — проверьте');
-});
+function upsertStaff(organText,stage,postType,fio){
+  fio=(fio||'').trim();
+  const key=orgKeyOf(organText);
+  if(!fio||!key) return;
+  const existing=DB.staffBook.find(s=>s.orgKey===key && s.stage===stage && s.postType===postType &&
+    s.fio.trim().toLowerCase()===fio.toLowerCase());
+  if(existing){ existing.updatedAt=now(); existing.orgText=organText.trim(); return; }
+  DB.staffBook.push({id:uid(), orgKey:key, orgText:organText.trim(), stage, postType, fio, updatedAt:now()});
+}
+function staffFioList(postType){
+  const key=orgKeyOf($('fOrganFull').value);
+  const stage=$('fDolzh').value;
+  if(!key) return [];
+  const names=DB.staffBook
+    .filter(s=>s.orgKey===key && s.stage===stage && s.postType===postType)
+    .sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''))
+    .map(s=>s.fio);
+  return [...new Set(names)];
+}
+function refreshStaffLists(){
+  $('dolzhFioList').innerHTML=staffFioList('investigator').map(f=>`<option value="${esc(f)}">`).join('');
+  $('nachOdList').innerHTML=staffFioList('nachOd').map(f=>`<option value="${esc(f)}">`).join('');
+  $('nachOmvdList').innerHTML=staffFioList('nachOmvd').map(f=>`<option value="${esc(f)}">`).join('');
+}
+$('fOrganFull').addEventListener('input',refreshStaffLists);
+$('fDolzh').addEventListener('change',refreshStaffLists);
 function draftNote(d){
   const l=[];
   if(d.kind) l.push('Основание: '+d.kind);
@@ -26548,6 +26563,9 @@ $('saveCase').onclick=async()=>{
   c.investigation.podpunkt=$('fPodpunkt').value;
   c.investigation.nachOd=$('fNachOd').value.trim();
   c.investigation.nachOmvd=$('fNachOmvd').value.trim();
+  upsertStaff(c.investigation.organFull,c.investigation.dolzh,'investigator',c.investigation.dolzhFio);
+  upsertStaff(c.investigation.organFull,c.investigation.dolzh,'nachOd',c.investigation.nachOd);
+  upsertStaff(c.investigation.organFull,c.investigation.dolzh,'nachOmvd',c.investigation.nachOmvd);
   c.notes=$('fNotes').value;
   c.deadlines=c.deadlines||[];
   c.events=c.events||[];
@@ -27310,7 +27328,6 @@ function renderOrgs(){
       <div style="color:var(--muted);font-size:13px">${esc([o.address,o.phone].filter(Boolean).join(' · ')||'без адреса и телефона')}</div>
     </button>`).join('') : '<p class="hint">Пока пусто.</p>';
   $('orgList').querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>editOrg(el.dataset.id));
-  fillOrgPick();
 }
 
 $('addOrg').onclick=async()=>{
@@ -27339,15 +27356,6 @@ async function editOrg(id){
   await saveDb(); renderOrgs(); toast('Орган обновлён');
 }
 
-function fillOrgPick(){
-  $('fOrgPick').innerHTML='<option value="">не выбран</option>'+
-    DB.policeDepartments.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join('');
-}
-$('fOrgPick').onchange=()=>{
-  const o=DB.policeDepartments.find(x=>x.id===$('fOrgPick').value); if(!o) return;
-  $('fInvestigator').value=o.name;
-  if(!$('fInvPhone').value.trim()&&o.phone) $('fInvPhone').value=o.phone;
-};
 
 /* ---------- сверка норм, библиотека сроков, календарь ---------- */
 function renderNorms(){
