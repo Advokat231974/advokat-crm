@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Кабинет — реестр дел</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F7F7F5;
+  --panel:#FFFFFF;
+  --ink:#14181F;
+  --muted:#6B7280;
+  --line:#E5E4E0;
+  --accent:#2B3A67;
+  --accent-soft:#EEF1F8;
+  --alarm:#B91C1C;
+  --warn:#B45309;
+  --calm:#15803D;
+  --radius:10px;
+  --sp:16px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--paper);color:var(--ink);
+  font-family:'DM Sans',system-ui,-apple-system,sans-serif;
+  font-size:15px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:none}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ---------- lock screen ---------- */
+#lock{
+  position:fixed;inset:0;background:var(--paper);z-index:50;
+  display:flex;align-items:center;justify-content:center;padding:24px;
+}
+.lock-card{width:100%;max-width:380px}
+.lock-mark{
+  font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:28px;
+}
+.lock-card h1{font-size:26px;font-weight:500;letter-spacing:-.02em;margin-bottom:6px}
+.lock-card p{color:var(--muted);font-size:14px;margin-bottom:24px}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.field input,.field select,.field textarea{
+  width:100%;padding:11px 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;
+}
+.field textarea{min-height:120px;resize:vertical}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:11px 18px;border-radius:8px;background:var(--accent);color:#fff;
+  font-weight:500;font-size:14px;
+}
+.btn:hover{filter:brightness(1.12)}
+.btn.wide{width:100%}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--accent-soft);filter:none}
+.btn.danger{background:var(--alarm)}
+.btn.sm{padding:7px 12px;font-size:13px}
+.err{color:var(--alarm);font-size:13px;margin-top:10px;min-height:18px}
+.hint{color:var(--muted);font-size:12px;margin-top:8px}
+
+/* ---------- shell ---------- */
+#app{display:none;min-height:100%;flex-direction:column}
+header.top{
+  position:sticky;top:0;z-index:20;background:var(--paper);
+  border-bottom:1px solid var(--line);
+  padding:12px var(--sp);display:flex;align-items:center;gap:12px;
+  padding-top:max(12px,env(safe-area-inset-top));
+}
+.brand{font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+  font-family:'JetBrains Mono',monospace;white-space:nowrap}
+.top-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+main{flex:1;padding:var(--sp);max-width:1000px;width:100%;margin:0 auto;
+  padding-bottom:calc(40px + env(safe-area-inset-bottom))}
+.view{display:none}
+.view.on{display:block}
+
+/* ---------- toolbar ---------- */
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.toolbar input[type=search]{
+  flex:1;min-width:180px;padding:10px 12px;background:var(--panel);
+  border:1px solid var(--line);border-radius:8px;
+}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.chip{
+  padding:6px 12px;border:1px solid var(--line);border-radius:999px;
+  font-size:13px;color:var(--muted);background:var(--panel);
+}
+.chip[aria-pressed=true]{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* ---------- case list: folder-spine signature ---------- */
+.case{
+  position:relative;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:14px 14px 14px 22px;margin-bottom:10px;
+  display:block;width:100%;text-align:left;
+}
+.case:hover{border-color:var(--accent)}
+.case::before{
+  content:'';position:absolute;left:0;top:10px;bottom:10px;width:4px;
+  border-radius:0 3px 3px 0;background:var(--muted);
+}
+.case[data-tone=appointment]::before{background:var(--accent)}
+.case[data-tone=agreement]::before{background:var(--calm)}
+.case[data-tone=archived]::before{background:var(--line)}
+.case-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.case-name{font-weight:500;font-size:16px}
+.case-num{font-size:13px;color:var(--muted)}
+.case-meta{margin-top:6px;font-size:13px;color:var(--muted);
+  display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.dot{width:3px;height:3px;border-radius:50%;background:var(--line);display:inline-block}
+.tag{
+  font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 7px;
+  border-radius:4px;background:var(--accent-soft);color:var(--accent);
+}
+.tag.warn{background:#FEF3C7;color:var(--warn)}
+.tag.alarm{background:#FEE2E2;color:var(--alarm)}
+
+.empty{
+  border:1px dashed var(--line);border-radius:var(--radius);
+  padding:40px 20px;text-align:center;color:var(--muted);
+}
+.empty strong{display:block;color:var(--ink);font-weight:500;margin-bottom:6px}
+
+/* ---------- form ---------- */
+.sheet{background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);padding:var(--sp);margin-bottom:14px}
+.sheet h2{font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);font-family:'JetBrains Mono',monospace;
+  font-weight:500;margin-bottom:14px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:620px){.grid2{grid-template-columns:1fr}}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.back{font-size:13px;color:var(--muted);margin-bottom:12px;display:inline-block}
+.back:hover{color:var(--accent)}
+.decl{background:var(--accent-soft);border-radius:8px;padding:10px 12px;
+  font-size:12px;color:var(--accent);line-height:1.7;margin-top:6px}
+.decl b{font-weight:500}
+
+/* ---------- toast ---------- */
+#toast{
+  position:fixed;left:50%;transform:translateX(-50%);
+  bottom:calc(20px + env(safe-area-inset-bottom));
+  background:var(--ink);color:#fff;padding:11px 18px;border-radius:8px;
+  font-size:14px;z-index:60;opacity:0;pointer-events:none;transition:opacity .2s;
+  max-width:90vw;
+}
+#toast.on{opacity:1}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div id="lock">
+  <div class="lock-card">
+    <div class="lock-mark">Адвокатский кабинет · Адамов Т.Т.</div>
+    <h1 id="lockTitle">Введите пароль</h1>
+    <p id="lockSub">База зашифрована. Без пароля доступ невозможен.</p>
+    <div class="field">
+      <label for="pw">Пароль</label>
+      <input type="password" id="pw" autocomplete="current-password">
+    </div>
+    <div class="field" id="pw2Wrap" style="display:none">
+      <label for="pw2">Повторите пароль</label>
+      <input type="password" id="pw2" autocomplete="new-password">
+    </div>
+    <button class="btn wide" id="unlockBtn">Открыть</button>
+    <div class="err" id="lockErr"></div>
+    <div class="hint" id="lockHint"></div>
+  </div>
+</div>
+
+<div id="app">
+  <header class="top">
+    <span class="brand">Реестр дел</span>
+    <div class="top-actions">
+      <button class="btn ghost sm" id="importBtn">Импорт заявки</button>
+      <button class="btn ghost sm" id="menuBtn">Ещё</button>
+      <button class="btn sm" id="newBtn">Новое дело</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- список -->
+    <section class="view on" id="viewList">
+      <div id="burning"></div>
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="ФИО, номер дела, статья, заявка">
+      </div>
+      <div class="chips" id="filters">
+        <button class="chip" data-f="all" aria-pressed="true">Все</button>
+        <button class="chip" data-f="appointment" aria-pressed="false">По назначению</button>
+        <button class="chip" data-f="agreement" aria-pressed="false">По соглашению</button>
+        <button class="chip" data-f="active" aria-pressed="false">В работе</button>
+        <button class="chip" data-f="archived" aria-pressed="false">Архив</button>
+      </div>
+      <div id="list"></div>
+    </section>
+
+    <!-- карточка -->
+    <section class="view" id="viewCase">
+      <a class="back" id="backList">← К реестру</a>
+
+      <div class="sheet">
+        <h2>Доверитель</h2>
+        <div class="field">
+          <label for="cName">ФИО в именительном падеже</label>
+          <input id="cName" placeholder="Иванов Иван Иванович">
+        </div>
+        <div id="declBox"></div>
+        <div class="grid2" style="margin-top:12px">
+          <div class="field">
+            <label for="cBirth">Дата рождения</label>
+            <input id="cBirth" type="date">
+          </div>
+          <div class="field">
+            <label for="cRole">Процессуальный статус</label>
+            <select id="cRole">
+              <option value="suspect">подозреваемый</option>
+              <option value="accused">обвиняемый</option>
+              <option value="defendant">подсудимый</option>
+              <option value="convicted">осуждённый</option>
+              <option value="victim">потерпевший</option>
+              <option value="witness">свидетель</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cPhone">Телефон</label>
+            <input id="cPhone" inputmode="tel">
+          </div>
+          <div class="field">
+            <label for="cDetention">СИЗО, если под стражей</label>
+            <input id="cDetention">
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Дело</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="fType">Основание участия</label>
+            <select id="fType">
+              <option value="appointment">по назначению, ст. 51 УПК РФ</option>
+              <option value="agreement">по соглашению</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fStage">Стадия</label>
+            <select id="fStage">
+              <option value="pre_investigation">доследственная проверка</option>
+              <option value="investigation">следствие, дознание</option>
+              <option value="first_instance">первая инстанция</option>
+              <option value="appeal">апелляция</option>
+              <option value="cassation">кассация</option>
+              <option value="execution">исполнение приговора</option>
+              <option value="closed">завершено</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fNumber">Номер дела</label>
+            <input id="fNumber" class="mono" placeholder="01-0556/2026">
+          </div>
+          <div class="field">
+            <label for="fArticles">Статьи</label>
+            <input id="fArticles" placeholder="ч. 4 ст. 159 УК РФ">
+          </div>
+          <div class="field">
+            <label for="fCourt">Суд</label>
+            <select id="fCourt"></select>
+          </div>
+          <div class="field">
+            <label for="fJudge">Судья</label>
+            <input id="fJudge">
+          </div>
+          <div class="field">
+            <label for="fRoom">Зал, кабинет</label>
+            <input id="fRoom">
+          </div>
+          <div class="field">
+            <label for="fOrgPick">Орган (быстрый выбор из справочника)</label>
+            <select id="fOrgPick"><option value="">не выбран</option></select>
+          </div>
+          <div class="field">
+            <label for="fInvestigator">Следователь, дознаватель, орган</label>
+            <input id="fInvestigator">
+          </div>
+          <div class="field">
+            <label for="fInvPhone">Телефон инициатора</label>
+            <input id="fInvPhone" class="mono" inputmode="tel">
+          </div>
+          <div class="field">
+            <label for="fStatus">Состояние</label>
+            <select id="fStatus">
+              <option value="active">в работе</option>
+              <option value="suspended">приостановлено</option>
+              <option value="archived">архив</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Мера пресечения</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="fRestraint">Вид</label>
+            <select id="fRestraint">
+              <option value="">не избрана</option>
+              <option value="custody">заключение под стражу</option>
+              <option value="house">домашний арест</option>
+              <option value="ban">запрет определённых действий</option>
+              <option value="bail">залог</option>
+              <option value="recognizance">подписка о невыезде</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="fRestraintUntil">Срок до</label>
+            <input id="fRestraintUntil" type="date">
+          </div>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Заявка палаты</h2>
+        <div class="grid2">
+          <div class="field">
+            <label for="fRequestNo">Номер заявки</label>
+            <input id="fRequestNo" class="mono">
+          </div>
+          <div class="field">
+            <label for="fRequestUrl">Ссылка в личном кабинете</label>
+            <input id="fRequestUrl">
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="openLk">Открыть в личном кабинете</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Сроки</h2>
+        <p class="hint" id="dlHint" style="margin:0 0 12px;display:none">
+          Сроки можно добавить после того, как дело будет сохранено.
+        </p>
+        <div id="deadlineList"></div>
+        <div class="grid2" id="dlForm">
+          <div class="field">
+            <label for="dlType">Триггер</label>
+            <select id="dlType"></select>
+          </div>
+          <div class="field">
+            <label for="dlDate">Дата события</label>
+            <input id="dlDate" type="date">
+          </div>
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="addDeadline">Добавить срок</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Документы</h2>
+        <p class="hint" id="docHint" style="margin:0 0 12px;display:none">
+          Документы можно формировать после того, как дело будет сохранено.
+        </p>
+        <div id="docList"></div>
+        <div class="row-actions" id="docActions">
+          <button class="btn ghost sm" id="makeDocFile">Скачать пакет для АдвокатДок</button>
+          <button class="btn ghost sm" id="sendDocTab">Отправить в открытую вкладку АдвокатДок</button>
+        </div>
+      </div>
+
+      <div class="sheet">
+        <h2>Заметки</h2>
+        <div class="field">
+          <textarea id="fNotes" placeholder="Позиция, ход дела, договорённости"></textarea>
+        </div>
+      </div>
+
+      <div class="row-actions">
+        <button class="btn" id="saveCase">Сохранить</button>
+        <button class="btn ghost" id="cancelCase">Отменить</button>
+        <button class="btn ghost danger-text" id="delCase" style="margin-left:auto;color:var(--alarm)">Удалить дело</button>
+      </div>
+    </section>
+
+    <!-- импорт -->
+    <section class="view" id="viewImport">
+      <a class="back" id="backList2">← К реестру</a>
+      <div class="sheet">
+        <h2>Импорт заявки</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Вставьте текст письма палаты или содержимое страницы заявки из личного кабинета.
+          Разбор покажет черновик — карточка создастся только после подтверждения.
+        </p>
+        <div class="field">
+          <textarea id="rawText" placeholder="Уважаемый Адамов Тажиб Таривердиевич! Вы назначены адвокатом по заявке №…"></textarea>
+        </div>
+        <div class="row-actions">
+          <button class="btn" id="parseBtn">Разобрать</button>
+          <button class="btn ghost" id="clearRaw">Очистить</button>
+        </div>
+      </div>
+      <div id="parseResult"></div>
+    </section>
+
+    <!-- меню -->
+    <section class="view" id="viewMenu">
+      <a class="back" id="backList3">← К реестру</a>
+      <div class="sheet">
+        <h2>База</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Данные хранятся на этом устройстве в зашифрованном виде. Резервная копия — единственный способ
+          пережить очистку браузера.
+        </p>
+        <div class="row-actions">
+          <button class="btn" id="expBtn">Сохранить резервную копию</button>
+          <button class="btn ghost" id="impBtn">Загрузить резервную копию</button>
+          <input type="file" id="impFile" accept=".json,.acrm" style="display:none">
+        </div>
+        <div class="hint" id="dbStat" style="margin-top:12px"></div>
+        <div class="hint" id="normsStat" style="margin-top:8px"></div>
+        <div class="row-actions" style="margin-top:8px">
+          <button class="btn ghost sm" id="normsCheckedBtn">Отметить нормы сверенными сегодня</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>АдвокатДок</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Адрес, по которому открывается АдвокатДок в браузере — нужен, чтобы кнопка «Отправить
+          в открытую вкладку» знала, куда стучаться. Пример: <span class="mono">http://localhost:8000/АдвокатДок_v5_2026-05-27.html</span>
+        </p>
+        <div class="field">
+          <label for="advokatDokUrl">Ссылка на АдвокатДок</label>
+          <input id="advokatDokUrl" placeholder="http://localhost:8000/АдвокатДок_v5_2026-05-27.html">
+        </div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="saveDokUrl">Сохранить</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Суды</h2>
+        <div id="courtList"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="addCourt">Добавить суд</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Органы, отделы полиции</h2>
+        <p class="hint" style="margin:0 0 12px">Справочник для быстрого выбора инициатора в карточке дела. Пуст с самого начала — наполняется по мере работы.</p>
+        <div id="orgList"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="addOrg">Добавить орган</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Библиотека сроков</h2>
+        <p class="hint" style="margin:0 0 12px">Триггеры для расчёта процессуальных сроков, раздел 5.2 ТЗ.</p>
+        <div id="dtList"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="addDeadlineType">Добавить триггер</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Производственный календарь</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Нерабочие дни для переноса сроков по ч. 5 ст. 128 УПК РФ. Пока календарь не отмечен
+          подтверждённым, перенос на субботы и воскресенья, не указанные явно, не рассчитывается автоматически.
+        </p>
+        <div id="calList"></div>
+        <div class="row-actions">
+          <button class="btn ghost sm" id="addHoliday">Добавить нерабочий день</button>
+        </div>
+      </div>
+      <div class="sheet">
+        <h2>Сеанс</h2>
+        <div class="row-actions">
+          <button class="btn ghost" id="lockBtn">Закрыть базу</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* =====================================================================
+   1. ХРАНИЛИЩЕ. IndexedDB с откатом в память, если оно недоступно.
+   ===================================================================== */
+const Store = (() => {
+  const DB='advokat_crm', ST='vault', KEY='db';
+  let mem=null, useMem=false;
+
+  function open(){
+    return new Promise((res,rej)=>{
+      if(!self.indexedDB){useMem=true;return rej(new Error('no-idb'));}
+      const r=indexedDB.open(DB,1);
+      r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains(ST))d.createObjectStore(ST);};
+      r.onsuccess=()=>res(r.result);
+      r.onerror=()=>rej(r.error);
+    });
+  }
+  async function get(){
+    if(useMem) return mem;
+    try{
+      const db=await open();
+      return await new Promise((res,rej)=>{
+        const t=db.transaction(ST,'readonly').objectStore(ST).get(KEY);
+        t.onsuccess=()=>res(t.result||null); t.onerror=()=>rej(t.error);
+      });
+    }catch(e){useMem=true;return mem;}
+  }
+  async function put(v){
+    if(useMem){mem=v;return;}
+    try{
+      const db=await open();
+      await new Promise((res,rej)=>{
+        const t=db.transaction(ST,'readwrite').objectStore(ST).put(v,KEY);
+        t.onsuccess=()=>res(); t.onerror=()=>rej(t.error);
+      });
+    }catch(e){useMem=true;mem=v;}
+  }
+  return {get,put,get volatile(){return useMem;}};
+})();
+
+/* =====================================================================
+   2. ШИФРОВАНИЕ. PBKDF2 → AES-GCM 256. Пароль нигде не сохраняется.
+   ===================================================================== */
+const Crypt = (() => {
+  const enc=new TextEncoder(), dec=new TextDecoder();
+  const ITER=250000;
+  const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+  const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+
+  async function deriveKey(pw,salt){
+    const base=await crypto.subtle.importKey('raw',enc.encode(pw),'PBKDF2',false,['deriveKey']);
+    return crypto.subtle.deriveKey(
+      {name:'PBKDF2',salt,iterations:ITER,hash:'SHA-256'},
+      base,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+  }
+  async function seal(obj,key){
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,enc.encode(JSON.stringify(obj)));
+    return {iv:b64(iv),ct:b64(ct)};
+  }
+  async function unseal(pack,key){
+    const pt=await crypto.subtle.decrypt(
+      {name:'AES-GCM',iv:unb64(pack.iv)},key,unb64(pack.ct));
+    return JSON.parse(dec.decode(pt));
+  }
+  return {deriveKey,seal,unseal,b64,unb64,ITER};
+})();
+
+/* =====================================================================
+   3. СКЛОНЕНИЕ ФИО. Падежи: род., дат., вин., твор., предл.
+      Пол определяется по отчеству, при его отсутствии — по окончанию имени.
+   ===================================================================== */
+const Decl = (() => {
+  const CASES=['gen','dat','acc','ins','pre'];
+  const hush=c=>'жшщчкгх'.includes(c);
+  const soft=c=>'йьяюеиё'.includes(c);
+
+  function gender(parts){
+    const p=(parts[2]||'').toLowerCase();
+    if(/(ович|евич|ич)$/.test(p)) return 'm';
+    if(/(овна|евна|ична|инична)$/.test(p)) return 'f';
+    const n=(parts[1]||'').toLowerCase();
+    if(/[ая]$/.test(n)) return 'f';
+    return 'm';
+  }
+
+  // отчество
+  function patr(w,g){
+    if(!w) return ['','','','',''];
+    const low=w.toLowerCase();
+    if(g==='m'&&/(ович|евич|ич)$/.test(low))
+      return [w+'а',w+'у',w+'а',w+'ем',w+'е'];
+    if(g==='f'&&/(вна|чна)$/.test(low)){
+      const b=w.slice(0,-1);
+      return [b+'ы',b+'е',b+'у',b+'ой',b+'е'];
+    }
+    return [w,w,w,w,w];
+  }
+
+  // имя
+  function first(w,g){
+    if(!w) return ['','','','',''];
+    const low=w.toLowerCase(), last=low.slice(-1), b=w.slice(0,-1);
+    if(g==='f'){
+      if(/ия$/.test(low)) return [b+'и',b+'и',b+'ю',b+'ей',b+'и'];
+      if(last==='я') return [b+'и',b+'е',b+'ю',b+'ей',b+'е'];
+      if(last==='а'){
+        const pre=low.slice(-2,-1);
+        const gen=hush(pre)?b+'и':b+'ы';
+        return [gen,b+'е',b+'у',b+(hush(pre)?'ей':'ой'),b+'е'];
+      }
+      if(last==='ь') return [b+'и',b+'и',w,b+'ью',b+'и'];
+      return [w,w,w,w,w];                       // Нинель, иностранные
+    }
+    if(last==='й') return [b+'я',b+'ю',b+'я',b+'ем',b+'е'];
+    if(last==='ь') return [b+'я',b+'ю',b+'я',b+'ем',b+'е'];
+    if(last==='а'){
+      const pre=low.slice(-2,-1);
+      return [b+(hush(pre)?'и':'ы'),b+'е',b+'у',b+(hush(pre)?'ей':'ой'),b+'е'];
+    }
+    if(last==='я') return [b+'и',b+'е',b+'ю',b+'ей',b+'е'];
+    if(/[аеиоуыэюя]$/.test(low)) return [w,w,w,w,w];
+    const ins=/[жшщчц]$/.test(low)?w+'ем':w+'ом';
+    return [w+'а',w+'у',w+'а',ins,w+'е'];
+  }
+
+  // фамилия
+  function surname(w,g){
+    if(!w) return ['','','','',''];
+    const low=w.toLowerCase(), b=w.slice(0,-1), b2=w.slice(0,-2);
+    // несклоняемые
+    if(/(ко|енко|ых|их|аго|ово|ий?ко)$/.test(low)&&!/ский$/.test(low)) return [w,w,w,w,w];
+    if(/(швили|дзе|иа|уа|ва|ян|ии|у|ю|э|и)$/.test(low)&&/(швили|дзе|иа|уа|ии)$/.test(low)) return [w,w,w,w,w];
+    if(g==='f'){
+      if(/(ова|ева|ёва|ина|ына)$/.test(low)) return [b+'ой',b+'ой',b+'у',b+'ой',b+'ой'];
+      if(/(ская|цкая|ая)$/.test(low)) return [b2+'ой',b2+'ой',b2+'ую',b2+'ой',b2+'ой'];
+      if(/я$/.test(low)) return [b+'и',b+'е',b+'ю',b+'ей',b+'е'];
+      if(/а$/.test(low)){
+        const pre=low.slice(-2,-1);
+        return [b+(hush(pre)?'и':'ы'),b+'е',b+'у',b+'ой',b+'е'];
+      }
+      return [w,w,w,w,w];                        // женские на согласную не склоняются
+    }
+    if(/(ов|ев|ёв|ин|ын)$/.test(low)) return [w+'а',w+'у',w+'а',w+'ым',w+'е'];
+    if(/(ский|цкий|ний|ий)$/.test(low)) return [b2+'ого',b2+'ому',b2+'ого',b2+'им',b2+'ом'];
+    if(/(ой|ый)$/.test(low)) return [b2+'ого',b2+'ому',b2+'ого',b2+'ым',b2+'ом'];
+    if(/й$/.test(low)) return [b+'я',b+'ю',b+'я',b+'ем',b+'е'];
+    if(/ь$/.test(low)) return [b+'я',b+'ю',b+'я',b+'ем',b+'е'];
+    if(/а$/.test(low)){
+      const pre=low.slice(-2,-1);
+      return [b+(hush(pre)?'и':'ы'),b+'е',b+'у',b+'ой',b+'е'];
+    }
+    if(/я$/.test(low)) return [b+'и',b+'е',b+'ю',b+'ей',b+'е'];
+    if(/[еиоуыэю]$/.test(low)) return [w,w,w,w,w];
+    const ins=/[жшщчц]$/.test(low)?w+'ем':w+'ом';
+    return [w+'а',w+'у',w+'а',ins,w+'е'];
+  }
+
+  function all(fio){
+    const parts=(fio||'').trim().split(/\s+/).filter(Boolean);
+    if(!parts.length) return null;
+    const g=gender(parts);
+    const s=surname(parts[0],g), f=first(parts[1],g), p=patr(parts[2],g);
+    const out={nom:parts.join(' '),gender:g};
+    CASES.forEach((c,i)=>{
+      out[c]=[s[i],f[i],p[i]].filter(Boolean).join(' ');
+    });
+    return out;
+  }
+  return {all};
+})();
+
+/* =====================================================================
+   4. ПАРСЕР ЗАЯВОК. Письма палаты и текст страницы личного кабинета.
+   ===================================================================== */
+const Parser = (() => {
+  const FIO=/([А-ЯЁ][а-яё\-]+\s+[А-ЯЁ][а-яё\-]+(?:\s+[А-ЯЁ][а-яё\-]+)?)/;
+
+  function grab(re,txt,i){const m=txt.match(re);return m?m[i||1].trim():'';}
+
+  function parse(raw){
+    const t=(raw||'').replace(/\r/g,'').replace(/\u00a0/g,' ');
+    const r={kind:'',requestNo:'',district:'',fio:'',caseNumber:'',phone:'',url:'',
+             articles:'',datetime:'',org:'',address:'',reason:'',warnings:[]};
+
+    // тип уведомления
+    if(/в порядке смены адвоката/i.test(t)) r.kind='смена адвоката';
+    else if(/Вы назначены/i.test(t)) r.kind='назначение';
+    else if(/статус\s*"?СРОЧНАЯ/i.test(t)) r.kind='срочная заявка';
+    else if(/поступила новая заявка/i.test(t)) r.kind='новая заявка';
+    else r.kind='страница личного кабинета';
+
+    r.requestNo=grab(/заявк[аеуи]\s*№?\s*(\d{4,})/i,t)||grab(/№\s*(\d{6,})/,t);
+    r.district=grab(/Судебн(?:ый|ого)\s+район[а]?\s*:?\s*([^\n.,]+)/i,t);
+    r.phone=(t.match(/\+7\s?\(?\d{3}\)?\s?\d{3}[-\s]?\d{2}[-\s]?\d{2}|\+7\d{10}/)||[''])[0];
+    r.url=(t.match(/https?:\/\/[^\s)\]]+/)||[''])[0];
+    r.caseNumber=grab(/Дел[оа]\s*№\s*([0-9A-Za-zА-Яа-я\/\-]+)/i,t);
+    r.reason=grab(/по причине:\s*([^\n.]+)/i,t);
+
+    // ФИО: сначала явные конструкции, потом метки страницы
+    r.fio = grab(new RegExp('осуществляете защиту\\s+'+FIO.source,'i'),t)
+         || grab(new RegExp('Дело\\s*№\\s*[^,]+,\\s*'+FIO.source,'i'),t)
+         || grab(new RegExp('(?:Подзащитн(?:ый|ая)|Защищаемое лицо|ФИО)\\s*:?\\s*'+FIO.source,'i'),t);
+
+    // поля, встречающиеся только на странице кабинета
+    r.articles=grab(/Стать[ияю]\s*:?\s*([^\n]+)/i,t);
+    r.datetime=grab(/(?:Дата и время|Время проведения|Дата)\s*:?\s*([^\n]+)/i,t);
+    r.org=grab(/(?:Орган|Инициатор|Наименование органа)\s*:?\s*([^\n]+)/i,t);
+    r.address=grab(/Адрес\s*:?\s*([^\n]+)/i,t);
+
+    if(!r.requestNo) r.warnings.push('не найден номер заявки');
+    if(!r.fio) r.warnings.push('ФИО подзащитного в тексте отсутствует');
+    if(r.district&&!/Тушинск|Зеленоградск/i.test(r.district))
+      r.warnings.push('район вне Тушинского и Зеленоградского — проверьте основание');
+    return r;
+  }
+  return {parse};
+})();
+
+/* =====================================================================
+   5. ДВИЖОК СРОКОВ. Ст. 128 УПК РФ: сутки и месяцы, перенос с нерабочего
+      дня — кроме сроков содержания под стражей и им подобных (shiftable).
+      Даты — ISO 'YYYY-MM-DD', арифметика в UTC, чтобы не ловить смещения
+      часового пояса браузера.
+   ===================================================================== */
+const Deadlines = (() => {
+  const WD=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  const parseISO=s=>{const[y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d));};
+  const toISO=d=>d.toISOString().slice(0,10);
+  const fmt=iso=>{const[y,m,d]=iso.split('-');return `${d}.${m}.${y}`;};
+  const wd=iso=>WD[parseISO(iso).getUTCDay()];
+
+  function addDays(iso,n){
+    const d=parseISO(iso); d.setUTCDate(d.getUTCDate()+n); return toISO(d);
+  }
+  function addMonths(iso,n){
+    const d=parseISO(iso);
+    const y=d.getUTCFullYear(), m=d.getUTCMonth()+n, day=d.getUTCDate();
+    const lastDay=new Date(Date.UTC(y,m+1,0)).getUTCDate();
+    return toISO(new Date(Date.UTC(y,m,Math.min(day,lastDay))));
+  }
+
+  // Даты ст. 112 ТК РФ не зависят от годового постановления о переносе — их можно
+  // распознавать как праздник даже если год ещё не заведён в DB.calendar.
+  const FIXED_MD=['01-01','01-02','01-03','01-04','01-05','01-06','01-07','01-08',
+    '02-23','03-08','05-01','05-09','06-12','11-04'];
+
+  // Выходной/праздник по производственному календарю. certain=false — для субботы
+  // или воскресенья, которые decретом могли быть превращены в рабочий день, а мы
+  // об этом не знаем. Будний день без записи в календаре по умолчанию рабочий —
+  // перенос рабочего дня в нерабочий встречается только вблизи праздников и не
+  // покрывается этой упрощённой проверкой (известное ограничение).
+  function dayInfo(iso,calendar){
+    const year=iso.slice(0,4), md=iso.slice(5);
+    if(FIXED_MD.includes(md)) return {nonworking:true,certain:true};
+    const y=calendar&&calendar[year];
+    const dow=parseISO(iso).getUTCDay(), weekend=dow===0||dow===6;
+    if(!y) return {nonworking:weekend,certain:!weekend};
+    if(y.holidays.includes(iso)) return {nonworking:true,certain:true};
+    if(weekend){
+      if((y.workdays||[]).includes(iso)) return {nonworking:false,certain:true};
+      return {nonworking:true,certain:y.status==='official'};
+    }
+    return {nonworking:false,certain:true};
+  }
+
+  function shiftForward(iso,calendar){
+    let cur=iso, uncertain=false, steps=0;
+    while(steps++<366){
+      const info=dayInfo(cur,calendar);
+      if(!info.certain) uncertain=true;
+      if(!info.nonworking) return {date:cur,uncertain};
+      cur=addDays(cur,1);
+    }
+    return {date:cur,uncertain:true};
+  }
+
+  function plural(n,one,few,many){
+    const n10=n%10, n100=n%100;
+    if(n10===1&&n100!==11) return one;
+    if(n10>=2&&n10<=4&&(n100<12||n100>14)) return few;
+    return many;
+  }
+  const unitWord=(u,v)=>u==='months'?plural(Math.abs(v),'месяц','месяца','месяцев'):'суток';
+
+  function compute(title,triggerDate,duration,shiftable,calendar){
+    const raw = duration.unit==='months'
+      ? addMonths(triggerDate,duration.value)
+      : addDays(triggerDate,duration.value);
+    const rawInfo=dayInfo(raw,calendar);
+    let finalDate=raw, shifted=false, uncertain=!rawInfo.certain, blocked=false;
+
+    if(shiftable && rawInfo.nonworking){
+      if(!rawInfo.certain){ blocked=true; uncertain=true; }
+      else{
+        const r=shiftForward(raw,calendar);
+        finalDate=r.date; shifted=finalDate!==raw; uncertain=uncertain||r.uncertain;
+      }
+    }
+
+    const nextDay=addDays(triggerDate,1);
+    const n=duration.value, word=unitWord(duration.unit,n);
+    let clause;
+    if(!rawInfo.nonworking){
+      clause=' — рабочий день'+(shiftable?', перенос не требуется.':'.');
+    }else if(!shiftable){
+      clause=' — нерабочий день; срок не переносится (ч. 5 ст. 128 УПК РФ к данному сроку не применяется).';
+    }else if(blocked){
+      clause=` — нерабочий день; для переноса нужен подтверждённый производственный календарь на ${raw.slice(0,4)} год.`;
+    }else{
+      clause=` — нерабочий день; перенос на ${fmt(finalDate)}, ${wd(finalDate)} (ч. 5 ст. 128 УПК РФ).`;
+    }
+
+    const explanation =
+      `${title}: ${fmt(triggerDate)}, ${wd(triggerDate)}. Течение срока — с ${fmt(nextDay)}. `+
+      `${n} ${word} истекают ${fmt(raw)}, ${wd(raw)}${clause} `+
+      `Последний день: ${blocked?'требует ручной проверки календаря.':fmt(finalDate)+'.'}`;
+
+    return {computedDate:blocked?null:finalDate, rawDate:raw, shifted, uncertain, blocked, explanation};
+  }
+
+  return {addDays,addMonths,dayInfo,shiftForward,compute,fmt,wd};
+})();
+
+/* =====================================================================
+   6. СОСТОЯНИЕ
+   ===================================================================== */
+let KEY=null, SALT=null, DB=null, editingId=null, filter='all', draft=null;
+
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const now=()=>new Date().toISOString();
+
+function blankDb(){
+  return {
+    version:1, updatedAt:now(),
+    cases:[], clients:[],
+    courts: blankCourts(),
+    policeDepartments: [],
+    settings:{retentionYears:2, normsCheckedAt:'2026-08-17', advokatDokUrl:'', advocate:{
+      name:'Адамов Тажиб Таривердиевич', registry:'77/9954',
+      cert:'№ 16184 от 11.05.2017',
+      address:'127422, г. Москва, Дмитровский проезд, д. 4, корп. 3, офис 101',
+      phone:'8-967-019-78-24', email:'adamovtt@yandex.ru', site:'advokat-adamov.ru'
+    }},
+    deadlineTypes: blankDeadlineTypes(),
+    calendar: blankCalendar()
+  };
+}
+
+// Тушинский и Зеленоградский — суды ст. 51 УПК РФ (см. п. 4.8 ТЗ), с них ведётся
+// подсказка типа дела. Остальные — районные суды Москвы для дел по соглашению,
+// собраны по открытым источникам 20.08.2026. Список неполный (в Москве 35 районных
+// судов, здесь и здесь ниже — 30, включая два выше) и адреса заведены только там, где
+// удалось их подтвердить: остальные — пустые, заполняются через редактирование суда
+// по мере фактической работы. Судов вне Москвы (в т.ч. арбитражных, ТиНАО) тут нет —
+// добавляются вручную.
+function blankCourts(){
+  const names=['Бабушкинский','Басманный','Бутырский','Гагаринский','Головинский',
+    'Дорогомиловский','Замоскворецкий','Зюзинский','Измайловский','Коптевский',
+    'Кузьминский','Кунцевский','Лефортовский','Люблинский','Мещанский','Нагатинский',
+    'Никулинский','Останкинский','Перовский','Преображенский','Пресненский',
+    'Савёловский','Симоновский','Солнцевский','Таганский','Тверской'];
+  const knownAddr={
+    'Хорошевский':'123154, г. Москва, ул. Маршала Тухачевского, д. 25, корп. 1',
+    'Чертановский':'117556, г. Москва, ул. Артековская, д. 3А'
+  };
+  const rest=[...names,'Хорошевский','Чертановский'].map(n=>({
+    id:uid(), name:n+' районный суд г. Москвы', address:knownAddr[n]||'', isAppointmentCourt:false
+  }));
+  return [
+    {id:uid(),name:'Тушинский районный суд г. Москвы',
+     address:'125373, г. Москва, ул. Героев Панфиловцев, д. 26, корп. 1',
+     isAppointmentCourt:true},
+    {id:uid(),name:'Зеленоградский районный суд г. Москвы',
+     address:'124365, г. Москва, Зеленоград, корп. 2001',
+     isAppointmentCourt:true},
+    ...rest
+  ];
+}
+
+// Заполняет отсутствующие поля в базе, сохранённой до появления этапа 2, значениями
+// по умолчанию. Не трогает то, что уже есть — только достраивает пробелы.
+function migrateDb(db){
+  db.courts=db.courts||blankCourts();
+  db.policeDepartments=db.policeDepartments||[];
+  db.deadlineTypes=db.deadlineTypes||blankDeadlineTypes();
+  db.calendar=db.calendar||blankCalendar();
+  db.settings=db.settings||{};
+  if(db.settings.retentionYears==null) db.settings.retentionYears=2;
+  if(db.settings.normsCheckedAt==null) db.settings.normsCheckedAt='';
+  if(db.settings.advokatDokUrl==null) db.settings.advokatDokUrl='';
+  db.cases=(db.cases||[]).map(c=>{
+    c.deadlines=c.deadlines||[]; c.events=c.events||[]; c.documents=c.documents||[];
+    return c;
+  });
+  return db;
+}
+
+function blankDeadlineTypes(){
+  return [
+    {id:'verdict_appeal', title:'Постановление приговора или иного решения суда',
+     norm:'ч. 1 ст. 389.4 УПК РФ', durationValue:15, durationUnit:'days', shiftable:true},
+    {id:'verdict_copy_custody', title:'Вручение копии приговора осуждённому под стражей',
+     norm:'ч. 1 ст. 389.4 УПК РФ', durationValue:15, durationUnit:'days', shiftable:true},
+    {id:'custody_order', title:'Постановление об избрании заключения под стражу либо об отказе',
+     norm:'ч. 11 ст. 108 УПК РФ', durationValue:3, durationUnit:'days', shiftable:false},
+    {id:'protocol_review_request', title:'Окончание судебного заседания — ходатайство об ознакомлении с протоколом',
+     norm:'ч. 7 ст. 259 УПК РФ', durationValue:3, durationUnit:'days', shiftable:true},
+    {id:'protocol_remarks', title:'Ознакомление с протоколом и аудиозаписью — замечания',
+     norm:'ч. 1 ст. 260 УПК РФ', durationValue:3, durationUnit:'days', shiftable:true},
+    {id:'cassation', title:'Вступление приговора в законную силу — сплошная кассация',
+     norm:'ч. 4 ст. 401.3 УПК РФ', durationValue:6, durationUnit:'months', shiftable:true},
+    {id:'cassation_copy_custody', title:'Вручение копии итогового решения осуждённому под стражей',
+     norm:'ч. 4 ст. 401.3 УПК РФ', durationValue:6, durationUnit:'months', shiftable:true},
+    {id:'ap_decision_copy', title:'Вручение копии постановления по делу об АП',
+     norm:'ч. 1 ст. 30.3 КоАП РФ', durationValue:10, durationUnit:'days', shiftable:true},
+    {id:'custody_end_reminder', title:'Окончание срока содержания под стражей — напоминание',
+     norm:'вспомогательный, не нормативный', durationValue:-10, durationUnit:'days', shiftable:false}
+  ];
+}
+
+// Фиксированные праздничные даты не зависят от годового постановления о переносе
+// выходных (ст. 112 ТК РФ) — их можно закладывать заранее для любого года.
+const FIXED_HOLIDAYS=['01-01','01-02','01-03','01-04','01-05','01-06','01-07','01-08',
+  '02-23','03-08','05-01','05-09','06-12','11-04'];
+
+function blankCalendar(){
+  return {
+    '2026':{
+      status:'partial',
+      source:'Постановление Правительства РФ № 1466 от 24.09.2025 — подтверждён только новогодний перенос',
+      verifiedAt:'2026-08-20',
+      // Перенос: суббота 3 и воскресенье 4 января и так нерабочие (входят в новогодние
+      // каникулы), поэтому декрет переносит саму субботу/воскресенье на 9 января и на
+      // 31.12.2025 — тот день у нас не в базе (год 2025 не заведён), поэтому он не влияет
+      // на расчёт сроков в 2026 году. Прочие переносы года не сверены.
+      holidays:FIXED_HOLIDAYS.map(d=>'2026-'+d).concat(['2026-01-09']),
+      workdays:[]
+    },
+    '2027':{
+      status:'draft',
+      source:'Проект Минтруда, утверждение Правительством ожидается осенью 2026 года',
+      verifiedAt:null,
+      holidays:FIXED_HOLIDAYS.map(d=>'2027-'+d),
+      workdays:[]
+    }
+  };
+}
+
+async function saveDb(){
+  DB.updatedAt=now();
+  const pack=await Crypt.seal(DB,KEY);
+  await Store.put({salt:Crypt.b64(SALT),iv:pack.iv,ct:pack.ct,updatedAt:DB.updatedAt});
+}
+
+/* =====================================================================
+   7. ВХОД
+   ===================================================================== */
+const $=id=>document.getElementById(id);
+let firstRun=false;
+
+(async function init(){
+  const rec=await Store.get();
+  firstRun=!rec;
+  if(firstRun){
+    $('lockTitle').textContent='Создайте пароль';
+    $('lockSub').textContent='Пароль шифрует базу и нигде не сохраняется. Восстановить его нельзя.';
+    $('pw2Wrap').style.display='';
+    $('pw').autocomplete='new-password';
+    $('unlockBtn').textContent='Создать базу';
+  }else{
+    $('lockTitle').textContent='Введите пароль';
+    $('lockSub').textContent='База зашифрована. Без пароля доступ невозможен.';
+    $('pw2Wrap').style.display='none';
+    $('pw').autocomplete='current-password';
+    $('unlockBtn').textContent='Открыть';
+  }
+  if(Store.volatile) $('lockHint').textContent=
+    'Постоянное хранилище недоступно. Данные будут жить только до закрытия вкладки.';
+  $('pw').focus();
+})();
+
+$('unlockBtn').onclick=unlock;
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});
+$('pw2').addEventListener('keydown',e=>{if(e.key==='Enter')unlock();});
+
+async function unlock(){
+  const pw=$('pw').value, err=$('lockErr');
+  err.textContent='';
+  if(pw.length<8){err.textContent='Пароль короче восьми символов.';return;}
+  if(firstRun&&pw!==$('pw2').value){err.textContent='Пароли не совпадают.';return;}
+  $('unlockBtn').textContent='Расшифровка…';
+  try{
+    if(firstRun){
+      SALT=crypto.getRandomValues(new Uint8Array(16));
+      KEY=await Crypt.deriveKey(pw,SALT);
+      DB=blankDb();
+      await saveDb();
+    }else{
+      const rec=await Store.get();
+      SALT=Crypt.unb64(rec.salt);
+      KEY=await Crypt.deriveKey(pw,SALT);
+      DB=migrateDb(await Crypt.unseal({iv:rec.iv,ct:rec.ct},KEY));
+    }
+  }catch(e){
+    $('unlockBtn').textContent=firstRun?'Создать базу':'Открыть';
+    err.textContent = firstRun
+      ? 'Не удалось создать базу: '+(e&&e.message||e)+'. Часто причина — шифрование недоступно в этом окне (нужен обычный браузер, не встроенный просмотр).'
+      : 'Пароль не подошёл.';
+    return;
+  }
+  $('lock').style.display='none';
+  $('app').style.display='flex';
+  renderList(); renderCourts(); renderOrgs(); renderStat();
+}
+
+/* =====================================================================
+   8. НАВИГАЦИЯ
+   ===================================================================== */
+function show(v){
+  document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));
+  $(v).classList.add('on');
+  window.scrollTo(0,0);
+}
+$('backList').onclick=()=>{show('viewList');renderList();};
+$('backList2').onclick=()=>show('viewList');
+$('backList3').onclick=()=>show('viewList');
+$('newBtn').onclick=()=>openCase(null);
+$('importBtn').onclick=()=>{show('viewImport');$('rawText').focus();};
+$('menuBtn').onclick=()=>{
+  renderStat();renderCourts();renderOrgs();renderNorms();renderDeadlineTypesBook();renderCalendarBook();
+  $('advokatDokUrl').value=DB.settings.advokatDokUrl||'';
+  show('viewMenu');
+};
+$('saveDokUrl').onclick=async()=>{
+  DB.settings.advokatDokUrl=$('advokatDokUrl').value.trim();
+  await saveDb(); toast('Ссылка сохранена');
+};
+$('lockBtn').onclick=()=>location.reload();
+
+function toast(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove('on'),2600);
+}
+
+/* =====================================================================
+   9. РЕЕСТР
+   ===================================================================== */
+const ROLE={suspect:'подозреваемый',accused:'обвиняемый',defendant:'подсудимый',
+  convicted:'осуждённый',victim:'потерпевший',witness:'свидетель'};
+const STAGE={pre_investigation:'проверка',investigation:'следствие',
+  first_instance:'первая инстанция',appeal:'апелляция',cassation:'кассация',
+  execution:'исполнение',closed:'завершено'};
+
+document.querySelectorAll('#filters .chip').forEach(b=>{
+  b.onclick=()=>{
+    filter=b.dataset.f;
+    document.querySelectorAll('#filters .chip').forEach(x=>x.setAttribute('aria-pressed',x===b));
+    renderList();
+  };
+});
+$('q').oninput=renderList;
+
+function clientOf(c){return DB.clients.find(x=>x.id===c.clientId)||null;}
+function courtOf(c){return DB.courts.find(x=>x.id===c.courtId)||null;}
+
+function renderBurning(){
+  const items=[];
+  DB.cases.forEach(c=>(c.deadlines||[]).forEach(d=>{
+    if(d.status==='done') return;
+    const cl=clientOf(c);
+    items.push({caseId:c.id, caseName:(cl&&cl.name&&cl.name.nom)||c.number||'дело без ФИО', d});
+  }));
+  const box=$('burning');
+  if(!items.length){box.innerHTML='';return;}
+  items.sort((a,b)=>(a.d.computedDate||'9999').localeCompare(b.d.computedDate||'9999'));
+  const shown=items.slice(0,8);
+  box.innerHTML=`<div class="sheet">
+    <h2>Горящие сроки</h2>
+    ${shown.map(it=>{
+      const t=deadlineTone(it.d);
+      return `<button class="case" data-cid="${it.caseId}" style="padding:10px 10px 10px 18px">
+        <span class="case-head">
+          <span class="case-name" style="font-size:14px">${esc(it.caseName)}</span>
+          <span class="case-num mono">${it.d.computedDate?esc(Deadlines.fmt(it.d.computedDate)):'—'}</span>
+          ${t.label?`<span class="tag ${t.cls}">${esc(t.label)}</span>`:''}
+        </span>
+        <span class="case-meta">${esc(it.d.title)}</span>
+      </button>`;
+    }).join('')}
+    ${items.length>shown.length?`<p class="hint" style="margin-top:6px">и ещё ${items.length-shown.length}</p>`:''}
+  </div>`;
+  box.querySelectorAll('[data-cid]').forEach(el=>el.onclick=()=>openCase(el.dataset.cid));
+}
+
+function renderList(){
+  renderBurning();
+  const q=$('q').value.trim().toLowerCase();
+  let rows=DB.cases.slice();
+  if(filter==='appointment') rows=rows.filter(c=>c.type==='appointment');
+  else if(filter==='agreement') rows=rows.filter(c=>c.type==='agreement');
+  else if(filter==='active') rows=rows.filter(c=>c.status==='active');
+  else if(filter==='archived') rows=rows.filter(c=>c.status==='archived');
+  if(q) rows=rows.filter(c=>{
+    const cl=clientOf(c);
+    return [c.number,c.articles,c.requestNo,c.judge,cl&&cl.name&&cl.name.nom]
+      .filter(Boolean).join(' ').toLowerCase().includes(q);
+  });
+  rows.sort((a,b)=>(b.updatedAt||'').localeCompare(a.updatedAt||''));
+
+  const box=$('list');
+  if(!rows.length){
+    box.innerHTML=`<div class="empty"><strong>${DB.cases.length?'Ничего не найдено':'Дел пока нет'}</strong>
+      ${DB.cases.length?'Измените запрос или снимите фильтр.'
+        :'Создайте дело вручную или вставьте текст заявки палаты через импорт.'}</div>`;
+    return;
+  }
+  box.innerHTML=rows.map(c=>{
+    const cl=clientOf(c), ct=courtOf(c);
+    const tone=c.status==='archived'?'archived':c.type;
+    const name=cl&&cl.name?cl.name.nom:'Доверитель не указан';
+    const bits=[ct?ct.name.replace(' районный суд г. Москвы',''):'',
+      STAGE[c.stage]||'', c.judge||''].filter(Boolean);
+    const tags=[];
+    if(c.type==='appointment') tags.push('<span class="tag">ст. 51</span>');
+    if(c.restraint&&c.restraint.type==='custody') tags.push('<span class="tag alarm">под стражей</span>');
+    if(c.needsReview) tags.push('<span class="tag warn">проверить</span>');
+    return `<button class="case" data-tone="${tone}" data-id="${c.id}">
+      <span class="case-head">
+        <span class="case-name">${esc(name)}</span>
+        ${c.number?`<span class="case-num mono">${esc(c.number)}</span>`:''}
+        ${tags.join('')}
+      </span>
+      <span class="case-meta">${esc(c.articles||'статья не указана')}
+        ${bits.map(b=>`<span class="dot"></span>${esc(b)}`).join('')}</span>
+    </button>`;
+  }).join('');
+  box.querySelectorAll('.case').forEach(el=>el.onclick=()=>openCase(el.dataset.id));
+}
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,
+  m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+/* =====================================================================
+   10. КАРТОЧКА
+   ===================================================================== */
+function fillCourts(sel){
+  $('fCourt').innerHTML='<option value="">не выбран</option>'+
+    DB.courts.map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('fCourt').value=sel||'';
+}
+
+function openCase(id){
+  editingId=id;
+  fillCourts();
+  fillOrgPick();
+  const c=id?DB.cases.find(x=>x.id===id):null;
+  const cl=c?clientOf(c):null;
+  const g=(o,k,d)=>o&&o[k]!=null?o[k]:(d||'');
+
+  $('cName').value=cl&&cl.name?cl.name.nom:(draft&&draft.fio||'');
+  $('cBirth').value=g(cl,'birthDate');
+  $('cRole').value=g(cl,'role','accused');
+  $('cPhone').value=cl&&cl.phones?cl.phones[0]||'':'';
+  $('cDetention').value=g(cl,'detention');
+
+  $('fType').value=g(c,'type',draft?'appointment':'appointment');
+  $('fStage').value=g(c,'stage','investigation');
+  $('fNumber').value=g(c,'number',draft&&draft.caseNumber||'');
+  $('fArticles').value=g(c,'articles',draft&&draft.articles||'');
+  $('fCourt').value=g(c,'courtId',draft?guessCourt(draft.district):'');
+  $('fJudge').value=g(c,'judge');
+  $('fRoom').value=g(c,'courtroom');
+  $('fOrgPick').value='';
+  $('fInvestigator').value=g(c,'investigator',draft&&draft.org||'');
+  $('fInvPhone').value=g(c,'investigatorPhone',draft&&draft.phone||'');
+  $('fStatus').value=g(c,'status','active');
+  $('fRestraint').value=c&&c.restraint?c.restraint.type||'':'';
+  $('fRestraintUntil').value=c&&c.restraint?c.restraint.dateUntil||'':'';
+  $('fRequestNo').value=g(c,'requestNo',draft&&draft.requestNo||'');
+  $('fRequestUrl').value=g(c,'requestUrl',draft&&draft.url||'');
+  $('fNotes').value=g(c,'notes',draft?draftNote(draft):'');
+
+  $('delCase').style.display=id?'':'none';
+  fillDeadlineTypes();
+  $('dlHint').style.display=id?'none':'';
+  $('dlForm').style.display=id?'':'none';
+  $('addDeadline').style.display=id?'':'none';
+  renderDeadlines(c);
+  $('docHint').style.display=id?'none':'';
+  $('docActions').style.display=id?'':'none';
+  renderDocs(c);
+  showDecl();
+  show('viewCase');
+}
+
+function guessCourt(district){
+  if(!district) return '';
+  const c=DB.courts.find(x=>x.name.toLowerCase().startsWith(district.trim().toLowerCase().slice(0,6)));
+  return c?c.id:'';
+}
+function draftNote(d){
+  const l=[];
+  if(d.kind) l.push('Основание: '+d.kind);
+  if(d.reason) l.push('Причина смены: '+d.reason);
+  if(d.datetime) l.push('Время по заявке: '+d.datetime);
+  if(d.address) l.push('Адрес: '+d.address);
+  return l.join('\n');
+}
+
+$('cName').addEventListener('input',showDecl);
+function showDecl(){
+  const d=Decl.all($('cName').value);
+  $('declBox').innerHTML = d ? `<div class="decl">
+    <b>род.</b> ${esc(d.gen)} · <b>дат.</b> ${esc(d.dat)} · <b>вин.</b> ${esc(d.acc)}<br>
+    <b>твор.</b> ${esc(d.ins)} · <b>предл.</b> ${esc(d.pre)}
+  </div>` : '';
+}
+
+$('openLk').onclick=()=>{
+  const u=$('fRequestUrl').value.trim();
+  if(!u){toast('Ссылка не указана');return;}
+  window.open(u,'_blank','noopener');
+};
+
+/* ---------- сроки ---------- */
+function fillDeadlineTypes(){
+  $('dlType').innerHTML=DB.deadlineTypes.map(t=>
+    `<option value="${t.id}">${esc(t.title)} — ${t.durationValue} ${t.durationUnit==='months'?'мес.':'сут.'}</option>`
+  ).join('');
+}
+
+$('dlType').onchange=()=>{
+  if($('dlType').value==='custody_end_reminder'&&$('fRestraintUntil').value&&!$('dlDate').value)
+    $('dlDate').value=$('fRestraintUntil').value;
+};
+
+function daysUntil(iso){
+  const a=new Date(iso+'T00:00:00'), b=new Date(); b.setHours(0,0,0,0);
+  return Math.round((a-b)/86400000);
+}
+
+function deadlineTone(d){
+  if(d.status==='done') return {cls:'',label:'исполнен'};
+  if(d.blocked||!d.computedDate) return {cls:'warn',label:'проверить календарь'};
+  const days=daysUntil(d.computedDate);
+  if(days<0) return {cls:'alarm',label:'пропущен'};
+  if(days<3) return {cls:'alarm',label:'горит'};
+  if(days<7) return {cls:'warn',label:'скоро'};
+  return {cls:'',label:''};
+}
+
+function renderDeadlines(c){
+  const box=$('deadlineList');
+  if(!c){box.innerHTML='';return;}
+  if(!c.deadlines||!c.deadlines.length){box.innerHTML='<p class="hint" style="margin-bottom:12px">Сроков пока нет.</p>';return;}
+  const rows=c.deadlines.slice().sort((a,b)=>(a.computedDate||'9999').localeCompare(b.computedDate||'9999'));
+  box.innerHTML=rows.map(d=>{
+    const t=deadlineTone(d);
+    return `<div class="sheet" style="padding:12px;margin-bottom:8px" data-id="${d.id}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:500">${esc(d.title)}</div>
+          <div class="hint" style="margin:2px 0 0">от ${esc(Deadlines.fmt(d.triggerDate))}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="mono" style="font-weight:500">${d.computedDate?esc(Deadlines.fmt(d.computedDate)):'—'}</div>
+          ${t.label?`<span class="tag ${t.cls}">${esc(t.label)}</span>`:''}
+        </div>
+      </div>
+      <button class="btn ghost sm dlExplain" style="margin-top:8px">Показать расчёт</button>
+      <div class="decl dlExpl" style="display:none;margin-top:8px">${esc(d.explanation)}</div>
+      <div class="row-actions" style="margin-top:8px">
+        ${d.status!=='done'?'<button class="btn ghost sm dlDone">Исполнено</button>':''}
+        <button class="btn ghost sm dlExtend">Продлить</button>
+        <button class="btn ghost sm dlDelete" style="color:var(--alarm)">Удалить</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  box.querySelectorAll('.dlExplain').forEach(b=>b.onclick=()=>{
+    const el=b.nextElementSibling, on=el.style.display!=='none';
+    el.style.display=on?'none':''; b.textContent=on?'Показать расчёт':'Скрыть расчёт';
+  });
+  box.querySelectorAll('.dlDone').forEach(b=>b.onclick=async()=>{
+    const d=c.deadlines.find(x=>x.id===b.closest('[data-id]').dataset.id);
+    d.status='done'; d.updatedAt=now();
+    await saveDb(); renderDeadlines(c); renderList(); toast('Срок отмечен исполненным');
+  });
+  box.querySelectorAll('.dlExtend').forEach(b=>b.onclick=async()=>{
+    const d=c.deadlines.find(x=>x.id===b.closest('[data-id]').dataset.id);
+    const nd=prompt('Новая дата (ГГГГ-ММ-ДД):',d.computedDate||'');
+    if(!nd) return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(nd)){toast('Формат даты: ГГГГ-ММ-ДД');return;}
+    d.computedDate=nd; d.status='extended'; d.blocked=false;
+    d.explanation+=' Срок продлён вручную до '+Deadlines.fmt(nd)+'.';
+    d.updatedAt=now();
+    await saveDb(); renderDeadlines(c); renderList(); toast('Срок продлён');
+  });
+  box.querySelectorAll('.dlDelete').forEach(b=>b.onclick=async()=>{
+    const id=b.closest('[data-id]').dataset.id;
+    if(!confirm('Удалить срок?')) return;
+    c.deadlines=c.deadlines.filter(x=>x.id!==id);
+    await saveDb(); renderDeadlines(c); renderList(); toast('Срок удалён');
+  });
+}
+
+$('addDeadline').onclick=async()=>{
+  if(!editingId){toast('Сначала сохраните дело');return;}
+  const type=DB.deadlineTypes.find(t=>t.id===$('dlType').value);
+  const triggerDate=$('dlDate').value;
+  if(!type||!triggerDate){toast('Укажите триггер и дату');return;}
+  const c=DB.cases.find(x=>x.id===editingId);
+  const duration={value:type.durationValue,unit:type.durationUnit};
+  const r=Deadlines.compute(type.title,triggerDate,duration,type.shiftable,DB.calendar);
+  c.deadlines=c.deadlines||[];
+  c.deadlines.push({
+    id:uid(), type:type.id, title:type.title, triggerDate,
+    duration, shiftable:type.shiftable,
+    computedDate:r.computedDate, explanation:r.explanation,
+    uncertain:r.uncertain, blocked:r.blocked,
+    status:'pending', createdAt:now(), updatedAt:now()
+  });
+  if(r.uncertain) c.needsReview=true;
+  c.updatedAt=now();
+  await saveDb();
+  $('dlDate').value='';
+  renderDeadlines(c); renderList();
+  toast(r.blocked?'Срок добавлен, но перенос не рассчитан — проверьте календарь':'Срок добавлен');
+};
+
+/* ---------- обмен с АдвокатДок, раздел 9 ТЗ ---------- */
+function renderDocs(c){
+  const box=$('docList');
+  if(!c){box.innerHTML='';return;}
+  if(!c.documents||!c.documents.length){box.innerHTML='<p class="hint" style="margin-bottom:12px">Документов пока нет.</p>';return;}
+  box.innerHTML=c.documents.slice().reverse().map(d=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:14px">
+      <div>${esc(d.title||d.kind||'Документ')} <span class="tag">${d.source==='advokatdok'?'из АдвокатДок':'вручную'}</span></div>
+      <div class="hint">${esc(Deadlines.fmt((d.createdAt||'').slice(0,10)||now().slice(0,10)))}</div>
+    </div>`).join('');
+}
+
+function buildDocPacket(c){
+  const cl=clientOf(c), ct=courtOf(c), adv=DB.settings.advocate;
+  return {
+    _app:'CRM', _type:'case-packet', _version:1, _correlationId:c.id+'|'+(c.number||''),
+    version:1,
+    case:{ number:c.number, court:ct?ct.name:'', judge:c.judge, articles:c.articles, stage:c.stage },
+    client:{ name:cl?cl.name:null, birthDate:cl?cl.birthDate:'', role:cl?cl.role:'', detention:cl?cl.detention:'' },
+    advocate: adv
+  };
+}
+
+$('makeDocFile').onclick=()=>{
+  if(!editingId) return;
+  const c=DB.cases.find(x=>x.id===editingId);
+  const packet=buildDocPacket(c);
+  const blob=new Blob([JSON.stringify(packet,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='crm_case_'+(c.number||c.id).replace(/[^\wа-яё\-]+/gi,'_')+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Пакет скачан — импортируйте его в АдвокатДок');
+};
+
+let dokWin=null;
+$('sendDocTab').onclick=()=>{
+  if(!editingId) return;
+  const url=DB.settings.advokatDokUrl;
+  if(!url){toast('Сначала укажите ссылку на АдвокатДок в «Ещё → АдвокатДок»');return;}
+  const c=DB.cases.find(x=>x.id===editingId);
+  const packet=buildDocPacket(c);
+  if(!dokWin||dokWin.closed) dokWin=window.open(url,'advokatdok');
+  let tries=0;
+  const h=setInterval(()=>{
+    tries++;
+    try{ dokWin.postMessage(packet,'*'); }catch(e){}
+    if(tries>=10) clearInterval(h);
+  },400);
+  toast('Отправляю в АдвокатДок — переключитесь на его вкладку');
+};
+
+window.addEventListener('message', async (e)=>{
+  const d=e.data;
+  if(!d||d._app!=='АдвокатДок'||d._type!=='document') return;
+  if(!DB) return;
+  const c=DB.cases.find(x=>x.number&&d.caseNumber&&x.number===d.caseNumber);
+  if(!c){toast('Документ пришёл из АдвокатДок, но дело с таким номером не найдено');return;}
+  c.documents=c.documents||[];
+  c.documents.push({id:uid(),caseId:c.id,kind:d.kind||'',title:d.title||'',createdAt:d.createdAt||now(),filedAt:'',fileRef:d.fileRef||'',source:'advokatdok'});
+  c.updatedAt=now();
+  await saveDb();
+  if(editingId===c.id) renderDocs(c);
+  toast('Документ из АдвокатДок добавлен в дело «'+(c.number||c.id)+'»');
+});
+
+$('cancelCase').onclick=()=>{draft=null;show('viewList');renderList();};
+
+$('saveCase').onclick=async()=>{
+  const fio=$('cName').value.trim();
+  if(!fio&&!$('fNumber').value.trim()){toast('Укажите ФИО или номер дела');return;}
+  const decl=Decl.all(fio);
+
+  let c=editingId?DB.cases.find(x=>x.id===editingId):null;
+  let cl=c?clientOf(c):null;
+  if(!cl){cl={id:uid(),phones:[],emails:[]};DB.clients.push(cl);}
+  cl.name=decl||{nom:fio};
+  cl.birthDate=$('cBirth').value;
+  cl.role=$('cRole').value;
+  cl.phones=[$('cPhone').value.trim()].filter(Boolean);
+  cl.detention=$('cDetention').value.trim();
+
+  if(!c){c={id:uid(),createdAt:now()};DB.cases.push(c);}
+  c.clientId=cl.id;
+  c.type=$('fType').value;
+  c.stage=$('fStage').value;
+  c.number=$('fNumber').value.trim();
+  c.articles=$('fArticles').value.trim();
+  c.courtId=$('fCourt').value;
+  c.judge=$('fJudge').value.trim();
+  c.courtroom=$('fRoom').value.trim();
+  c.investigator=$('fInvestigator').value.trim();
+  c.investigatorPhone=$('fInvPhone').value.trim();
+  c.status=$('fStatus').value;
+  c.restraint={type:$('fRestraint').value,dateUntil:$('fRestraintUntil').value};
+  c.requestNo=$('fRequestNo').value.trim();
+  c.requestUrl=$('fRequestUrl').value.trim();
+  c.notes=$('fNotes').value;
+  c.deadlines=c.deadlines||[];
+  c.events=c.events||[];
+  c.documents=c.documents||[];
+  c.needsReview=draft?draft.warnings.length>0:!!c.needsReview;
+  c.updatedAt=now();
+
+  await saveDb();
+  draft=null; editingId=null;
+  toast('Дело сохранено');
+  show('viewList'); renderList();
+};
+
+$('delCase').onclick=async()=>{
+  if(!editingId) return;
+  if(!confirm('Удалить дело без возможности восстановления? Сохраните резервную копию, если данные могут понадобиться.')) return;
+  const c=DB.cases.find(x=>x.id===editingId);
+  DB.cases=DB.cases.filter(x=>x.id!==editingId);
+  if(c) DB.clients=DB.clients.filter(cl=>DB.cases.some(k=>k.clientId===cl.id));
+  await saveDb();
+  editingId=null; toast('Дело удалено');
+  show('viewList'); renderList();
+};
+
+/* =====================================================================
+   11. ИМПОРТ ЗАЯВКИ
+   ===================================================================== */
+$('clearRaw').onclick=()=>{$('rawText').value='';$('parseResult').innerHTML='';};
+
+$('parseBtn').onclick=()=>{
+  const raw=$('rawText').value.trim();
+  if(!raw){toast('Вставьте текст заявки');return;}
+  const r=Parser.parse(raw);
+  draft=r;
+
+  const dup=r.requestNo?DB.cases.find(c=>c.requestNo===r.requestNo):null;
+  const rows=[
+    ['Тип уведомления',r.kind],
+    ['Номер заявки',r.requestNo],
+    ['Судебный район',r.district],
+    ['Подзащитный',r.fio],
+    ['Номер дела',r.caseNumber],
+    ['Телефон инициатора',r.phone],
+    ['Статья',r.articles],
+    ['Дата и время',r.datetime],
+    ['Орган',r.org],
+    ['Адрес',r.address]
+  ];
+  $('parseResult').innerHTML=`
+    <div class="sheet">
+      <h2>Что удалось разобрать</h2>
+      ${rows.map(([k,v])=>`<div style="display:flex;gap:10px;padding:5px 0;
+        border-bottom:1px solid var(--line);font-size:14px">
+        <span style="color:var(--muted);min-width:150px">${k}</span>
+        <span class="${v?'':'mono'}" style="${v?'':'color:var(--warn)'}">${v?esc(v):'—'}</span></div>`).join('')}
+      ${r.warnings.length?`<div class="decl" style="background:#FEF3C7;color:var(--warn);margin-top:12px">
+        ${r.warnings.map(w=>'· '+esc(w)).join('<br>')}</div>`:''}
+      ${dup?`<div class="decl" style="background:#FEE2E2;color:var(--alarm);margin-top:12px">
+        Заявка с этим номером уже есть в реестре. Проверьте, чтобы не создать дубль.</div>`:''}
+      <div class="row-actions" style="margin-top:14px">
+        <button class="btn" id="toCase">Создать дело из заявки</button>
+      </div>
+    </div>`;
+  $('toCase').onclick=()=>openCase(null);
+};
+
+/* =====================================================================
+   12. РЕЗЕРВНАЯ КОПИЯ И СПРАВОЧНИКИ
+   ===================================================================== */
+$('expBtn').onclick=async()=>{
+  const pack=await Crypt.seal(DB,KEY);
+  const blob=new Blob([JSON.stringify({
+    format:'advokat-crm-backup',v:1,
+    salt:Crypt.b64(SALT),iv:pack.iv,ct:pack.ct,
+    savedAt:now(),cases:DB.cases.length
+  },null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='crm_backup_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(a.href);
+  toast('Копия сохранена. Держите её отдельно от компьютера.');
+};
+
+$('impBtn').onclick=()=>$('impFile').click();
+$('impFile').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  try{
+    const j=JSON.parse(await f.text());
+    if(j.format!=='advokat-crm-backup') throw new Error('format');
+    if(!confirm('Загрузка копии заменит текущую базу целиком. Продолжить?')) return;
+    const salt=Crypt.unb64(j.salt);
+    const pw=prompt('Пароль, которым была зашифрована эта копия:');
+    if(pw==null) return;
+    const key=await Crypt.deriveKey(pw,salt);
+    const data=await Crypt.unseal({iv:j.iv,ct:j.ct},key);
+    DB=migrateDb(data); SALT=salt; KEY=key;
+    await saveDb();
+    toast('База загружена: дел — '+DB.cases.length);
+    renderList(); renderCourts(); renderOrgs(); renderStat();
+    show('viewList');
+  }catch(err){
+    toast(err.message==='format'?'Это не файл резервной копии':'Пароль не подошёл или файл повреждён');
+  }finally{ e.target.value=''; }
+};
+
+function renderStat(){
+  const app=DB.cases.filter(c=>c.type==='appointment').length;
+  $('dbStat').innerHTML=
+    `Дел: <b class="mono">${DB.cases.length}</b> · по назначению: <b class="mono">${app}</b> · `+
+    `доверителей: <b class="mono">${DB.clients.length}</b><br>`+
+    `Изменено: <span class="mono">${new Date(DB.updatedAt).toLocaleString('ru-RU')}</span>`+
+    (Store.volatile?'<br><span style="color:var(--warn)">Постоянное хранилище недоступно: сохраните копию до закрытия вкладки.</span>':'');
+}
+
+function renderCourts(){
+  $('courtList').innerHTML=DB.courts.map(c=>`
+    <button class="case" data-id="${c.id}"
+      style="padding:8px 10px 8px 16px;margin-bottom:0;border-radius:0;border-left:none;border-right:none;border-top:none">
+      <div>${esc(c.name)} ${c.isAppointmentCourt?'<span class="tag">ст. 51</span>':''}</div>
+      <div style="color:var(--muted);font-size:13px">${esc(c.address||'адрес не указан — нажмите, чтобы заполнить')}</div>
+    </button>`).join('');
+  $('courtList').querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>editCourt(el.dataset.id));
+}
+
+$('addCourt').onclick=async()=>{
+  const name=prompt('Наименование суда:'); if(!name) return;
+  const address=prompt('Адрес суда:')||'';
+  DB.courts.push({id:uid(),name:name.trim(),address:address.trim(),isAppointmentCourt:false});
+  await saveDb(); renderCourts(); toast('Суд добавлен');
+};
+
+async function editCourt(id){
+  const c=DB.courts.find(x=>x.id===id); if(!c) return;
+  const name=prompt('Наименование суда (пусто — удалить суд):',c.name);
+  if(name==null) return;
+  if(!name.trim()){
+    if(!confirm('Удалить суд «'+c.name+'»? Дела, где он указан, сохранят прежнюю ссылку без имени.')) return;
+    DB.courts=DB.courts.filter(x=>x.id!==id);
+    await saveDb(); renderCourts(); toast('Суд удалён');
+    return;
+  }
+  const address=prompt('Адрес суда:',c.address||'');
+  if(address==null) return;
+  c.name=name.trim(); c.address=address.trim();
+  c.isAppointmentCourt=confirm('Суд ст. 51 УПК РФ (работа по назначению)? ОК — да, Отмена — нет.');
+  await saveDb(); renderCourts(); toast('Суд обновлён');
+}
+
+/* ---------- органы, отделы полиции ---------- */
+function renderOrgs(){
+  $('orgList').innerHTML=DB.policeDepartments.length ? DB.policeDepartments.map(o=>`
+    <button class="case" data-id="${o.id}"
+      style="padding:8px 10px 8px 16px;margin-bottom:0;border-radius:0;border-left:none;border-right:none;border-top:none">
+      <div>${esc(o.name)}</div>
+      <div style="color:var(--muted);font-size:13px">${esc([o.address,o.phone].filter(Boolean).join(' · ')||'без адреса и телефона')}</div>
+    </button>`).join('') : '<p class="hint">Пока пусто.</p>';
+  $('orgList').querySelectorAll('[data-id]').forEach(el=>el.onclick=()=>editOrg(el.dataset.id));
+  fillOrgPick();
+}
+
+$('addOrg').onclick=async()=>{
+  const name=prompt('Наименование органа (например: ОМВД России по району Хорошёво-Мнёвники):'); if(!name) return;
+  const address=prompt('Адрес:')||'';
+  const phone=prompt('Телефон:')||'';
+  DB.policeDepartments.push({id:uid(),name:name.trim(),address:address.trim(),phone:phone.trim()});
+  await saveDb(); renderOrgs(); toast('Орган добавлен');
+};
+
+async function editOrg(id){
+  const o=DB.policeDepartments.find(x=>x.id===id); if(!o) return;
+  const name=prompt('Наименование органа (пусто — удалить):',o.name);
+  if(name==null) return;
+  if(!name.trim()){
+    if(!confirm('Удалить «'+o.name+'»?')) return;
+    DB.policeDepartments=DB.policeDepartments.filter(x=>x.id!==id);
+    await saveDb(); renderOrgs(); toast('Орган удалён');
+    return;
+  }
+  const address=prompt('Адрес:',o.address||'');
+  if(address==null) return;
+  const phone=prompt('Телефон:',o.phone||'');
+  if(phone==null) return;
+  o.name=name.trim(); o.address=address.trim(); o.phone=phone.trim();
+  await saveDb(); renderOrgs(); toast('Орган обновлён');
+}
+
+function fillOrgPick(){
+  $('fOrgPick').innerHTML='<option value="">не выбран</option>'+
+    DB.policeDepartments.map(o=>`<option value="${o.id}">${esc(o.name)}</option>`).join('');
+}
+$('fOrgPick').onchange=()=>{
+  const o=DB.policeDepartments.find(x=>x.id===$('fOrgPick').value); if(!o) return;
+  $('fInvestigator').value=o.name;
+  if(!$('fInvPhone').value.trim()&&o.phone) $('fInvPhone').value=o.phone;
+};
+
+/* ---------- сверка норм, библиотека сроков, календарь ---------- */
+function renderNorms(){
+  $('normsStat').textContent='Нормы сверены: '+
+    (DB.settings.normsCheckedAt?new Date(DB.settings.normsCheckedAt).toLocaleDateString('ru-RU'):'не отмечено');
+}
+$('normsCheckedBtn').onclick=async()=>{
+  DB.settings.normsCheckedAt=now().slice(0,10);
+  await saveDb(); renderNorms(); toast('Дата сверки обновлена');
+};
+
+function renderDeadlineTypesBook(){
+  $('dtList').innerHTML=DB.deadlineTypes.map(t=>`
+    <div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:14px">
+      <div>${esc(t.title)}</div>
+      <div class="hint">${esc(t.norm)} · ${t.durationValue} ${t.durationUnit==='months'?'мес.':'сут.'} · ${t.shiftable?'с переносом':'без переноса'}</div>
+    </div>`).join('');
+}
+$('addDeadlineType').onclick=async()=>{
+  const title=prompt('Наименование триггера:'); if(!title) return;
+  const norm=prompt('Норма (статья, часть):')||'';
+  const durationValue=parseInt(prompt('Длительность в сутках (отрицательное число — напоминание заранее):','3'),10);
+  if(!Number.isFinite(durationValue)){toast('Нужно целое число');return;}
+  const shiftable=confirm('Переносится с нерабочего дня на следующий рабочий? ОК — да, Отмена — нет.');
+  DB.deadlineTypes.push({id:uid(),title:title.trim(),norm:norm.trim(),durationValue,durationUnit:'days',shiftable});
+  await saveDb(); renderDeadlineTypesBook(); fillDeadlineTypes(); toast('Триггер добавлен в библиотеку');
+};
+
+const CAL_STATUS_LABEL={official:'подтверждён',partial:'частично подтверждён',draft:'проект, не утверждён'};
+function renderCalendarBook(){
+  $('calList').innerHTML=Object.keys(DB.calendar).sort().map(y=>{
+    const cal=DB.calendar[y];
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line);font-size:14px" data-year="${y}">
+      <div>${y} год — <span class="tag${cal.status==='official'?'':' warn'}">${CAL_STATUS_LABEL[cal.status]||cal.status}</span></div>
+      <div class="hint">${esc(cal.source||'')}${cal.verifiedAt?' · сверено '+esc(cal.verifiedAt):''}</div>
+      <div class="hint">нерабочих дней в базе: ${cal.holidays.length}</div>
+      ${cal.status!=='official'?'<button class="btn ghost sm calVerify" style="margin-top:6px">Отметить подтверждённым</button>':''}
+    </div>`;
+  }).join('');
+  $('calList').querySelectorAll('.calVerify').forEach(b=>b.onclick=async()=>{
+    const y=b.closest('[data-year]').dataset.year;
+    if(!confirm('Подтвердить, что список нерабочих дней на '+y+' год сверен с официальным постановлением и полон?')) return;
+    DB.calendar[y].status='official';
+    DB.calendar[y].verifiedAt=now().slice(0,10);
+    await saveDb(); renderCalendarBook(); toast('Календарь '+y+' года отмечен подтверждённым');
+  });
+}
+$('addHoliday').onclick=async()=>{
+  const iso=prompt('Дата нерабочего дня (ГГГГ-ММ-ДД):'); if(!iso) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(iso)){toast('Формат даты: ГГГГ-ММ-ДД');return;}
+  const y=iso.slice(0,4);
+  DB.calendar[y]=DB.calendar[y]||{status:'partial',source:'добавлено вручную',verifiedAt:null,holidays:[],workdays:[]};
+  if(!DB.calendar[y].holidays.includes(iso)) DB.calendar[y].holidays.push(iso);
+  await saveDb(); renderCalendarBook(); toast('Нерабочий день добавлен');
+};
+</script>
+</body>
+</html>
