@@ -24802,7 +24802,7 @@ const DocGen = (() => {
     const children=[];
     children.push(P('СОГЛАСОВАНО',{align:'right',bold:true,spaceAfter:40}));
     children.push(P('Начальник '+(inv.organFull||''),{align:'right',spaceAfter:40}));
-    children.push(P('___________________   _________________',{align:'right',spaceAfter:40}));
+    children.push(P('___________________   '+(inv.nachOd?toShortFio(inv.nachOd):'_________________'),{align:'right',spaceAfter:40}));
     const grToday=new Date();
     children.push(P(`«${String(grToday.getDate()).padStart(2,'0')}» ${MONTHS[grToday.getMonth()]} ${grToday.getFullYear()} г.`,{align:'right',spaceAfter:100}));
     children.push(P('Справка-график',{align:'center',bold:true,spaceAfter:60}));
