@@ -25807,11 +25807,27 @@ function courtOf(c){return DB.courts.find(x=>x.id===c.courtId)||null;}
 // Если суд в деле явно не выбран (частый случай у импортированных дел),
 // пробуем угадать его по тексту органа/следователя — по совпадению начала
 // названия района (без учёта падежа: «Тушинскому району» тоже подходит).
+// Территориальная подсудность судов, где работа по назначению (официальные данные
+// судов Москвы): Тушинский — Северное и Южное Тушино, Покровское-Стрешнево, Митино,
+// Куркино; Зеленоградский — все районы Зеленограда.
+const COURT_BY_DISTRICT={
+  'северное тушино':'Тушинский','южное тушино':'Тушинский','покровское-стрешнево':'Тушинский',
+  'митино':'Тушинский','куркино':'Тушинский',
+  'крюково':'Зеленоградский','матушкино':'Зеленоградский','савёлки':'Зеленоградский','савелки':'Зеленоградский',
+  'силино':'Зеленоградский','зеленоград':'Зеленоградский'
+};
 function courtForCase(c){
   const direct=courtOf(c);
   if(direct) return direct;
   const text=(((c.investigation&&c.investigation.organFull)||'')+' '+(c.investigator||'')).toLowerCase();
   if(!text.trim()) return null;
+  for(const k in COURT_BY_DISTRICT){
+    if(text.includes(k)){
+      const stem=COURT_BY_DISTRICT[k].toLowerCase();
+      const ct=DB.courts.find(x=>x.name.toLowerCase().startsWith(stem));
+      if(ct) return ct;
+    }
+  }
   return DB.courts.find(x=>text.includes(x.name.toLowerCase().slice(0,7)))||null;
 }
 
