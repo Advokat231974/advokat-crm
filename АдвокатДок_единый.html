@@ -25984,17 +25984,38 @@ function renderBackupBanner(){
   const box=$('backupBanner'); if(!box) return;
   const days=daysSinceBackup(), changed=changedSinceBackup();
   const stale = days===null || days>=7 || changed;
-  if(!stale){ box.innerHTML=''; return; }
-  let msg;
-  if(days===null) msg='Резервной копии ещё не было. Дела хранятся только в этом браузере — при очистке данных они пропадут.';
-  else if(days>=7) msg=`Последняя копия ${days} ${plural(days,'день','дня','дней')} назад. Пора обновить — так дела не потеряются.`;
-  else msg='После копии были изменения. Сделайте свежую копию, чтобы не потерять их.';
-  box.innerHTML=`<div class="sheet" style="border-color:var(--warn);background:#FEF9F0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-    <div style="flex:1;min-width:200px"><b style="color:var(--warn)">Резервная копия</b><br>
-      <span class="hint" style="margin:0">${esc(msg)}</span></div>
-    <button class="btn sm" id="bannerBackup" style="background:var(--warn)">Скачать копию</button>
-  </div>`;
-  $('bannerBackup').onclick=doBackup;
+  const pushAt=DB.settings&&DB.settings.lastSyncPushAt;
+  const driveDays=pushAt?Math.max(0,Math.floor((Date.now()-new Date(pushAt).getTime())/86400000)):null;
+  const driveStale=Sync.isConnected() && (driveDays===null || driveDays>=7);
+  if(!stale && !driveStale){ box.innerHTML=''; return; }
+  let html='';
+  if(stale){
+    let msg;
+    if(days===null) msg='Резервной копии ещё не было. Дела хранятся только в этом браузере — при очистке данных они пропадут.';
+    else if(days>=7) msg=`Последняя копия ${days} ${plural(days,'день','дня','дней')} назад. Пора обновить — так дела не потеряются.`;
+    else msg='После копии были изменения. Сделайте свежую копию, чтобы не потерять их.';
+    html+=`<div class="sheet" style="border-color:var(--warn);background:#FEF9F0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><b style="color:var(--warn)">Резервная копия</b><br>
+        <span class="hint" style="margin:0">${esc(msg)}</span></div>
+      <button class="btn sm" id="bannerBackup" style="background:var(--warn)">Скачать копию</button>
+    </div>`;
+  }
+  if(driveStale){
+    const dmsg=driveDays===null?'На Диск база ещё не отправлялась.':`Последняя отправка на Диск ${driveDays} ${plural(driveDays,'день','дня','дней')} назад.`;
+    html+=`<div class="sheet" style="border-color:var(--warn);background:#FEF9F0;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><b style="color:var(--warn)">Копия на Google Диске</b><br>
+        <span class="hint" style="margin:0">${esc(dmsg)} Обновите её раз в неделю.</span></div>
+      <button class="btn sm" id="bannerDrive" style="background:var(--warn)">Отправить на Диск</button>
+    </div>`;
+  }
+  box.innerHTML=html;
+  if($('bannerBackup')) $('bannerBackup').onclick=doBackup;
+  if($('bannerDrive')) $('bannerDrive').onclick=async()=>{
+    $('bannerDrive').textContent='Отправка…';
+    try{ await Sync.push(); toast('База отправлена на Диск'); }
+    catch(e){ toast('Не удалось отправить: '+e.message); }
+    renderBackupBanner(); renderSyncPanel();
+  };
 }
 
 function renderList(){
