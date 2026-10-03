@@ -26720,6 +26720,7 @@ $('saveCase').onclick=async()=>{
   c.updatedAt=now();
 
   await saveDb();
+  scheduleIndexPush();
   draft=null; editingId=null;
   toast('Дело сохранено');
   show('viewList'); renderList();
@@ -26732,6 +26733,7 @@ $('delCase').onclick=async()=>{
   DB.cases=DB.cases.filter(x=>x.id!==editingId);
   if(c) DB.clients=DB.clients.filter(cl=>DB.cases.some(k=>k.clientId===cl.id));
   await saveDb();
+  scheduleIndexPush();
   editingId=null; toast('Дело удалено');
   show('viewList'); renderList();
 };
@@ -27282,6 +27284,18 @@ async function pushDailyIndex(){
   }catch(e){ console.warn('index push failed:',e.message); }
 }
 
+// После изменения дел обновляем индекс для бота через 20 секунд (серия правок — одна отправка),
+// чтобы вечернее напоминание знало о только что внесённых днях участия.
+let indexPushTimer=null;
+function scheduleIndexPush(){
+  if(!DB||!DB.settings||!DB.settings.searchEnabled) return;
+  clearTimeout(indexPushTimer);
+  indexPushTimer=setTimeout(async()=>{
+    try{ await pushCaseIndex(); DB.settings.lastIndexPushAt=now().slice(0,10); }
+    catch(e){ console.warn('index push failed:',e.message); }
+  },20000);
+}
+
 function renderSearchPanel(){
   const box=$('searchStatus'); if(!box) return;
   $('searchEnabled').checked=!!DB.settings.searchEnabled;
@@ -27435,6 +27449,7 @@ async function processAssignments(){
       if(res==='created') created++; else updated++;
     }
     if(created||updated){
+      scheduleIndexPush();
       renderList(); renderStat();
       toast(created?('Из писем палаты создано дел: '+created+' — проверьте'):'Дела дополнены из писем палаты');
     }
