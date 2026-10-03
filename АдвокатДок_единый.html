@@ -23481,6 +23481,10 @@ details:not([open]) .row-actions{display:none}
           <input type="checkbox" id="fSensitive" style="width:auto">
           <span>Повышенная защищённость (поиск с телефона по этому делу — только по паролю)</span>
         </label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:8px;margin-top:8px">
+          <input type="checkbox" id="fNeedsReview" style="width:auto">
+          <span>Требует проверки (данные внесены автоматически — снимите отметку, когда проверите)</span>
+        </label>
       </div>
 
       <div class="sheet">
@@ -25705,6 +25709,7 @@ async function unlock(){
   renderList(); renderCourts(); renderOrgs(); renderStat();
   pushDailyNotify();
   pushDailyIndex();
+  processAssignments();
 }
 
 /* =====================================================================
@@ -26020,6 +26025,7 @@ function openCase(id){
   $('fInvPhone').value=g(c,'investigatorPhone',draft&&draft.phone||'');
   $('fStatus').value=g(c,'status','active');
   $('fSensitive').checked=!!(c&&c.sensitive);
+  $('fNeedsReview').checked=c?!!c.needsReview:!!(draft&&draft.warnings&&draft.warnings.length>0);
   $('fRestraint').value=c&&c.restraint?c.restraint.type||'':'';
   $('fRestraintUntil').value=c&&c.restraint?c.restraint.dateUntil||'':'';
   $('fRequestNo').value=g(c,'requestNo',draft&&draft.requestNo||'');
@@ -26574,7 +26580,7 @@ $('saveCase').onclick=async()=>{
   c.finance.appointment=c.finance.appointment||{days:[]};
   c.finance.appointment.days=editDays.map(d=>Object.assign({},d));
   c.finance.appointment.paid=$('fPaid').checked;
-  c.needsReview=draft?draft.warnings.length>0:!!c.needsReview;
+  c.needsReview=$('fNeedsReview').checked;
   c.updatedAt=now();
 
   await saveDb();
@@ -27092,7 +27098,7 @@ async function renderPendingList(){
   try{
     const r=await fetch(PENDING_LIST_URL,{headers:{'Authorization':'Bearer '+ensureNotifyToken()}});
     if(!r.ok) throw new Error('сервер ответил '+r.status);
-    items=await r.json();
+    items=(await r.json()).filter(it=>it.kind!=='assignment');
   }catch(e){ box.innerHTML='<p class="hint" style="color:var(--alarm)">Не удалось загрузить: '+esc(e.message)+'</p>'; return; }
   if(!items.length){ box.innerHTML='<p class="hint">Пока пусто.</p>'; return; }
   const options=pendingCaseOptions();
@@ -27138,6 +27144,76 @@ async function pendingAck(id){
   }catch(e){ console.warn('pending ack failed:',e.message); }
 }
 $('pendingRefreshBtn').onclick=renderPendingList;
+
+/* ---------- назначения из писем палаты: бот кладёт в очередь, CRM создаёт дело ---------- */
+const ASSIGN_BASIS={accepted:'ранее принятая заявка', defence:'осуществляется защита подзащитного', replace:'смена адвоката'};
+
+function applyAssignment(it){
+  const when=(it.at||'').slice(0,10).split('-').reverse().join('.');
+  const noteHead='Назначение по заявке №'+it.num+(when?' (письмо палаты от '+when+')':'');
+  const basis=ASSIGN_BASIS[it.basis]||'';
+  const existing=DB.cases.find(c=>c.requestNo&&c.requestNo===String(it.num));
+  if(existing){
+    if(!existing.requestUrl&&it.link) existing.requestUrl=it.link;
+    if(!existing.investigatorPhone&&it.phone) existing.investigatorPhone=it.phone;
+    if(!existing.courtId&&it.district) existing.courtId=guessCourt(it.district);
+    if(!existing.number&&it.caseNumber) existing.number=it.caseNumber;
+    const cl=clientOf(existing);
+    if(cl&&it.fio&&!(cl.name&&cl.name.nom)) cl.name=Decl.all(it.fio)||{nom:it.fio};
+    if(!(existing.notes||'').includes(noteHead)) existing.notes=((existing.notes||'')+'\n'+noteHead+(basis?'. Основание: '+basis:'')).trim();
+    existing.updatedAt=now();
+    return 'updated';
+  }
+  const nom=(it.fio||'').trim();
+  const client={id:uid(), name:nom?(Decl.all(nom)||{nom}):{nom:''}, birthDate:'', birthPlace:'',
+    role:'accused', phones:[], emails:[], detention:''};
+  const dup=nom&&DB.cases.find(c=>{const x=clientOf(c); return x&&x.name&&(x.name.nom||'').toLowerCase()===nom.toLowerCase();});
+  const notes=[noteHead+(basis?'. Основание: '+basis:''),
+    it.district?('Судебный район: '+it.district):'',
+    it.reason?('Причина смены: '+it.reason):'',
+    dup?('Возможно, дубль: у этого подзащитного уже есть дело'+(dup.number?' №'+dup.number:'')+(dup.requestNo?' (заявка №'+dup.requestNo+')':'')+'.'):'',
+    'Создано автоматически из письма палаты. Орган, следователь, статья и даты — в личном кабинете по ссылке заявки; дополните и снимите отметку «проверить».'
+  ].filter(Boolean).join('\n');
+  const caseObj={
+    id:uid(), type:'appointment', number:it.caseNumber||'', articles:'',
+    courtId:it.district?guessCourt(it.district):'', judge:'', courtroom:'',
+    investigator:'', investigatorPhone:it.phone||'',
+    stage:'investigation', restraint:{type:'',dateUntil:''},
+    clientId:client.id, requestNo:String(it.num), requestUrl:it.link||'',
+    status:'active', needsReview:true,
+    investigation:{organFull:'', dolzhFio:'', dolzh:'sled', orderNomer:'', orderData:'', vozbData:'',
+      outNomer:'', zayavData:'', podpunkt:'g', nachOd:'', nachOmvd:''},
+    deadlines:[], events:[], documents:[],
+    finance:{appointment:{days:[], paid:false}},
+    notes, createdAt:now(), updatedAt:now()
+  };
+  DB.clients.push(client);
+  DB.cases.push(caseObj);
+  return 'created';
+}
+
+let assignmentsBusy=false;
+async function processAssignments(){
+  if(assignmentsBusy||!DB||!DB.settings||!DB.settings.notifyToken) return;
+  assignmentsBusy=true;
+  try{
+    const r=await fetch(PENDING_LIST_URL,{headers:{'Authorization':'Bearer '+DB.settings.notifyToken}});
+    if(!r.ok) return;
+    const list=(await r.json()).filter(it=>it.kind==='assignment'&&it.num);
+    let created=0, updated=0;
+    for(const it of list){
+      const res=applyAssignment(it);
+      await saveDb();
+      await pendingAck(it.id);
+      if(res==='created') created++; else updated++;
+    }
+    if(created||updated){
+      renderList(); renderStat();
+      toast(created?('Из писем палаты создано дел: '+created+' — проверьте'):'Дела дополнены из писем палаты');
+    }
+  }catch(e){ console.warn('assignments failed:',e.message); }
+  finally{ assignmentsBusy=false; }
+}
 
 /* ---------- импорт из АдвокатДок (раздел 14 ТЗ) ---------- */
 // ДД.ММ.ГГГГ → ISO YYYY-MM-DD. Пустое/битое значение → ''.
