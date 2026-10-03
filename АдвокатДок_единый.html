@@ -23750,6 +23750,7 @@ details:not([open]) .row-actions{display:none}
         <p class="hint" style="margin:0 0 12px">Счёт, акт и сопроводительное письмо сразу по нескольким делам — для сдачи в бухгалтерию.</p>
         <div class="row-actions">
           <button class="btn" id="openReport">Счёт, акт, сопроводительное</button>
+          <button class="btn" id="openBatch">Пакет выплат за месяц</button>
         </div>
       </div>
       <div class="sheet">
@@ -23950,6 +23951,32 @@ details:not([open]) .row-actions{display:none}
         <div class="row-actions" style="margin-top:12px">
           <button class="btn" id="zayavSave">Сохранить внесённое</button>
         </div>
+      </div>
+    </section>
+
+    <!-- пакет документов о выплате за месяц -->
+    <section class="view" id="viewBatch">
+      <a class="back" id="backList6">← К реестру</a>
+      <div class="sheet">
+        <h2>Пакет выплат за месяц</h2>
+        <p class="hint" style="margin:0 0 12px">Выберите месяц — покажутся неоплаченные дела по назначению, где в этом месяце были дни участия. По отмеченным делам сразу сформируются документы одним архивом .zip (по папке на каждое дело).</p>
+        <div class="grid2">
+          <div class="field"><label for="bMonth">Месяц</label><input id="bMonth" type="month"></div>
+        </div>
+        <div class="chips" style="margin:6px 0;gap:14px">
+          <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="bZayav" checked style="width:auto"> заявление о выплате</label>
+          <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="bGrafik" checked style="width:auto"> справка-график</label>
+          <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" id="bPost" style="width:auto"> постановление о выплате</label>
+        </div>
+        <div class="row-actions" style="margin-bottom:8px">
+          <button class="btn ghost sm" id="bSelectAll">Выбрать все</button>
+          <button class="btn ghost sm" id="bSelectNone">Снять все</button>
+        </div>
+        <div id="bList"></div>
+        <div class="row-actions" style="margin-top:12px">
+          <button class="btn" id="bGenerate">Сформировать пакет (.zip)</button>
+        </div>
+        <div id="bResult" class="hint" style="margin-top:8px"></div>
       </div>
     </section>
 
@@ -25780,6 +25807,7 @@ $('backList2').onclick=()=>show('viewList');
 $('backList3').onclick=()=>show('viewList');
 $('backList4').onclick=()=>show('viewList');
 $('backList5').onclick=()=>{show('viewList');renderList();};
+$('backList6').onclick=()=>{show('viewList');renderList();};
 $('newBtn').onclick=()=>openCase(null);
 $('importBtn').onclick=()=>{show('viewImport');$('rawText').focus();};
 $('menuBtn').onclick=()=>{
@@ -26912,6 +26940,103 @@ $('fromTextApply').onclick=()=>{
     (filled.length?'Заполнено: <b>'+esc(filled.join(', '))+'</b>.':'Пустых полей, которые можно заполнить, не нашлось.')+
     (kept.length?'<br>Уже было введено и отличается от текста заявки (не менялось): '+esc(kept.join(', '))+'.':'')+
     (filled.length?'<br>Проверьте и нажмите «Сохранить».':'');
+};
+
+/* ---------- пакет выплат за месяц (.zip нескольких документов по делам) ---------- */
+// Минимальный ZIP, метод store (без сжатия — .docx уже сжаты). Возвращает Blob.
+function zipStore(files){
+  const enc=new TextEncoder();
+  const T=(function(){const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+  const crc32=u8=>{let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=T[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;};
+  const u16=n=>[n&0xFF,(n>>>8)&0xFF], u32=n=>[n&0xFF,(n>>>8)&0xFF,(n>>>16)&0xFF,(n>>>24)&0xFF];
+  const d=new Date();
+  const dt=((d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1))&0xFFFF;
+  const dd=(((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate())&0xFFFF;
+  const parts=[], central=[]; let off=0;
+  for(const f of files){
+    const nameB=enc.encode(f.name), crc=crc32(f.data), sz=f.data.length;
+    const lh=[].concat(u32(0x04034b50),u16(20),u16(0x0800),u16(0),u16(dt),u16(dd),u32(crc),u32(sz),u32(sz),u16(nameB.length),u16(0));
+    parts.push(new Uint8Array(lh),nameB,f.data);
+    central.push({nameB,crc,sz,off}); off+=30+nameB.length+sz;
+  }
+  const cdStart=off; const cd=[];
+  for(const c of central){
+    const h=[].concat(u32(0x02014b50),u16(20),u16(20),u16(0x0800),u16(0),u16(dt),u16(dd),u32(c.crc),u32(c.sz),u32(c.sz),u16(c.nameB.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(c.off));
+    cd.push(new Uint8Array(h),c.nameB);
+  }
+  const cdSize=cd.reduce((s,p)=>s+p.length,0);
+  const end=[].concat(u32(0x06054b50),u16(0),u16(0),u16(central.length),u16(central.length),u32(cdSize),u32(cdStart),u16(0));
+  return new Blob(parts.concat(cd,[new Uint8Array(end)]),{type:'application/zip'});
+}
+const sanitizeName=s=>String(s||'').replace(/[\\/:*?"<>|]+/g,'-').trim()||'без-имени';
+function batchDeals(){
+  const ym=$('bMonth').value;
+  if(!ym) return [];
+  return DB.cases.filter(c=>{
+    if(c.type!=='appointment'||c.status==='archived') return false;
+    if(isPaid(c)) return false;
+    const days=(c.finance&&c.finance.appointment&&c.finance.appointment.days)||[];
+    return days.some(dd=>dd.date&&dd.date.slice(0,7)===ym);
+  });
+}
+let batchSelected=new Set();
+function batchPreselect(){ batchSelected=new Set(batchDeals().filter(c=>{const cl=clientOf(c);return cl&&cl.name&&cl.name.nom;}).map(c=>c.id)); }
+function renderBatchList(){
+  const rows=batchDeals();
+  if(!rows.length){ $('bList').innerHTML='<p class="hint">За этот месяц неоплаченных дел с днями участия нет.</p>'; return; }
+  $('bList').innerHTML=rows.map(c=>{
+    const cl=clientOf(c), noName=!(cl&&cl.name&&cl.name.nom);
+    const nom=noName?(c.requestNo?'Заявка №'+c.requestNo:'без ФИО'):cl.name.nom;
+    const sum=Finance.calcCaseSum(c);
+    return `<label style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px${noName?';opacity:.55':''}">
+      <input type="checkbox" class="bChk" data-cid="${c.id}" ${batchSelected.has(c.id)&&!noName?'checked':''} ${noName?'disabled':''} style="width:auto">
+      <span style="flex:1">${esc(nom)}${noName?' — без ФИО, для документов не годится':''}<br><span class="hint mono" style="margin:0">${esc(c.number||'—')} · ${sum.toLocaleString('ru-RU')} ₽</span></span>
+    </label>`;
+  }).join('');
+  $('bList').querySelectorAll('.bChk').forEach(ch=>ch.onchange=()=>{ if(ch.checked)batchSelected.add(ch.dataset.cid); else batchSelected.delete(ch.dataset.cid); });
+}
+function openBatch(){
+  if(!$('bMonth').value){ const d=new Date(); $('bMonth').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+  batchPreselect(); renderBatchList(); show('viewBatch');
+}
+$('openBatch').onclick=openBatch;
+$('bMonth').onchange=()=>{ batchPreselect(); renderBatchList(); };
+$('bSelectAll').onclick=()=>{ batchDeals().forEach(c=>{const cl=clientOf(c); if(cl&&cl.name&&cl.name.nom)batchSelected.add(c.id);}); renderBatchList(); };
+$('bSelectNone').onclick=()=>{ batchSelected.clear(); renderBatchList(); };
+$('bGenerate').onclick=async()=>{
+  const ids=[...batchSelected];
+  if(!ids.length){ toast('Отметьте хотя бы одно дело'); return; }
+  const want=[];
+  if($('bZayav').checked) want.push('zayavlenieOplata');
+  if($('bGrafik').checked) want.push('spravkaGrafik');
+  if($('bPost').checked) want.push('postanovlenieVyplata');
+  if(!want.length){ toast('Отметьте хотя бы один документ'); return; }
+  $('bGenerate').textContent='Формирую…'; $('bResult').textContent='';
+  try{
+    const files=[], problems=[]; let okCases=0;
+    for(const id of ids){
+      const c=DB.cases.find(x=>x.id===id); if(!c) continue;
+      const cl=clientOf(c);
+      if(!cl||!cl.name||!cl.name.nom){ problems.push('дело без ФИО'); continue; }
+      const ct=courtForCase(c);
+      const folder=sanitizeName(cl.name.nom+(c.number?' '+c.number:''));
+      let made=false;
+      for(const fn of want){
+        try{
+          const {doc,filename}=await DocGen[fn](c,cl,DB.settings.advocate,{courtName:ct?ct.name:''});
+          const buf=new Uint8Array(await (await docx.Packer.toBlob(doc)).arrayBuffer());
+          files.push({name:folder+'/'+filename,data:buf}); made=true;
+        }catch(e){ problems.push(cl.name.nom+' / '+fn+': '+(e&&e.message||e)); }
+      }
+      if(made) okCases++;
+    }
+    if(!files.length){ toast('Ни одного документа не сформировано'); $('bResult').textContent=problems.join('; '); return; }
+    const blob=zipStore(files);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='Выплаты_'+$('bMonth').value+'.zip'; a.click(); URL.revokeObjectURL(a.href);
+    $('bResult').innerHTML='Готово: дел — '+okCases+', файлов — '+files.length+'.'+(problems.length?'<br>Пропущено: '+esc(problems.join('; ')):'');
+  }catch(e){ toast('Ошибка: '+(e&&e.message||e)); }
+  finally{ $('bGenerate').textContent='Сформировать пакет (.zip)'; }
 };
 
 /* =====================================================================
