@@ -27198,6 +27198,7 @@ async function processAssignments(){
   assignmentsBusy=true;
   try{
     const r=await fetch(PENDING_LIST_URL,{headers:{'Authorization':'Bearer '+DB.settings.notifyToken}});
+    if(r.status===401){ toast('Очередь бота недоступна: токен уведомлений не совпадает с серверным'); return; }
     if(!r.ok) return;
     const list=(await r.json()).filter(it=>it.kind==='assignment'&&it.num);
     let created=0, updated=0;
