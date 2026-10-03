@@ -1,15 +1,15 @@
 'use strict';
 // Тесты движка сроков (раздел 5 ТЗ). Запуск: node deadlines.test.js
-// Модуль Deadlines извлекается прямо из advokat_crm.html, чтобы тест
-// проверял реальный код, а не его копию.
+// Модуль Deadlines извлекается прямо из АдвокатДок_единый.html (рабочий файл),
+// чтобы тест проверял реальный код, а не его копию.
 
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const html = fs.readFileSync(path.join(__dirname, 'advokat_crm.html'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, 'АдвокатДок_единый.html'), 'utf8');
 const m = html.match(/const Deadlines = \(\(\) => \{[\s\S]*?\n\}\)\(\);/);
-if (!m) throw new Error('Модуль Deadlines не найден в advokat_crm.html — тест не может его проверить.');
+if (!m) throw new Error('Модуль Deadlines не найден в АдвокатДок_единый.html — тест не может его проверить.');
 
 const sandbox = {};
 vm.createContext(sandbox);
