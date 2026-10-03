@@ -23919,6 +23919,23 @@ details:not([open]) .row-actions{display:none}
       </div>
     </section>
 
+    <!-- даты подачи заявлений списком -->
+    <section class="view" id="viewZayav">
+      <a class="back" id="backList5">← К реестру</a>
+      <div class="sheet">
+        <h2>Даты подачи заявлений</h2>
+        <p class="hint" style="margin:0 0 12px">
+          Для дел, где есть дни участия, но не указана дата подачи заявления о выплате. Впишите дату — и
+          по делу начнёт считаться 30-дневный срок оплаты. Если вам уже заплатили, отметьте «оплачено».
+          Строки без изменений останутся как есть.
+        </p>
+        <div id="zayavRows"></div>
+        <div class="row-actions" style="margin-top:12px">
+          <button class="btn" id="zayavSave">Сохранить внесённое</button>
+        </div>
+      </div>
+    </section>
+
     <!-- счёт / акт / сопроводительное по нескольким делам -->
     <section class="view" id="viewReport">
       <a class="back" id="backList4">← К реестру</a>
@@ -25724,6 +25741,7 @@ $('backList').onclick=()=>{show('viewList');renderList();};
 $('backList2').onclick=()=>show('viewList');
 $('backList3').onclick=()=>show('viewList');
 $('backList4').onclick=()=>show('viewList');
+$('backList5').onclick=()=>{show('viewList');renderList();};
 $('newBtn').onclick=()=>openCase(null);
 $('importBtn').onclick=()=>{show('viewImport');$('rawText').focus();};
 $('menuBtn').onclick=()=>{
@@ -25894,16 +25912,58 @@ function renderOverdue(){
   if(noDate.length){
     html+=`<div class="sheet" style="border-color:var(--warn)">
       <h2 style="color:var(--warn)">Проверить дату подачи · ${noDate.length} ${plural(noDate.length,'дело','дела','дел')}</h2>
-      <p class="hint" style="margin:-6px 0 0">Есть дни участия и оплата не отмечена, но не заполнена дата подачи заявления — просрочку по ним не отследить. Откройте дело и впишите дату на вкладке «Дело».</p>
+      <p class="hint" style="margin:-6px 0 12px">Есть дни участия и оплата не отмечена, но не заполнена дата подачи заявления — просрочку по ним не отследить.</p>
+      <button class="btn sm" id="zayavOpen">Внести даты списком</button>
     </div>`;
   }
   box.innerHTML=html;
+  const zo=$('zayavOpen'); if(zo) zo.onclick=openZayav;
   box.querySelectorAll('.ovOpen').forEach(el=>el.onclick=()=>openCase(el.dataset.cid));
   box.querySelectorAll('.ovJaloba').forEach(el=>el.onclick=()=>{
     const c=DB.cases.find(x=>x.id===el.dataset.cid);
     if(c) generateForCase(c,'jaloba_124',DocGen.jaloba124);
   });
 }
+
+/* ---------- даты подачи заявлений списком ---------- */
+function noFilingDateCases(){
+  return DB.cases.filter(c=>c.type==='appointment' && paymentOverdueDays(c)===undefined &&
+    (c.finance&&c.finance.appointment&&c.finance.appointment.days||[]).length);
+}
+function openZayav(){
+  const rows=noFilingDateCases();
+  $('zayavRows').innerHTML=rows.map(c=>{
+    const cl=clientOf(c), nom=(cl&&cl.name&&cl.name.nom)||(c.requestNo?'Заявка №'+c.requestNo:'без ФИО');
+    const days=c.finance.appointment.days.map(d=>d.date).filter(Boolean).sort();
+    const span=days.length?(days.length+' дн.: '+Deadlines.fmt(days[0])+(days.length>1?' — '+Deadlines.fmt(days[days.length-1]):'')):'';
+    return `<div class="zrow" data-cid="${c.id}" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)">
+      <div style="flex:1;min-width:220px"><div style="font-weight:500">${esc(nom)}</div>
+        <div class="hint mono" style="margin:0">${esc(c.number||'—')}${span?' · '+esc(span):''}</div></div>
+      <input type="date" class="zDate" aria-label="Дата подачи заявления" style="width:auto">
+      <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" class="zPaid" style="width:auto"> оплачено</label>
+    </div>`;
+  }).join('')||'<p class="hint">Все дела с днями участия уже с датой подачи.</p>';
+  show('viewZayav');
+}
+$('zayavSave').onclick=async()=>{
+  const today=now().slice(0,10);
+  let n=0, bad=0;
+  document.querySelectorAll('#zayavRows .zrow').forEach(r=>{
+    const c=DB.cases.find(x=>x.id===r.dataset.cid); if(!c) return;
+    const date=r.querySelector('.zDate').value, paid=r.querySelector('.zPaid').checked;
+    if(date&&date>today){ bad++; return; }
+    if(!date&&!paid) return;
+    if(date){ c.investigation=c.investigation||{}; c.investigation.zayavData=date; }
+    if(paid){ c.finance.appointment.paid=true; }
+    c.updatedAt=now(); n++;
+  });
+  if(bad){ toast('Дата в будущем у '+bad+' дел — пропущены'); }
+  if(!n){ if(!bad) toast('Ничего не внесено'); return; }
+  await saveDb();
+  renderList(); renderStat();
+  toast('Внесено по делам: '+n);
+  openZayav();
+};
 
 // Дней с последней резервной копии; null — копию никогда не делали.
 function daysSinceBackup(){
