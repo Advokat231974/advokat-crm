@@ -25964,7 +25964,7 @@ function renderList(){
   box.innerHTML=rows.map(c=>{
     const cl=clientOf(c), ct=courtOf(c);
     const tone=c.status==='archived'?'archived':c.type;
-    const name=cl&&cl.name?cl.name.nom:'Доверитель не указан';
+    const name=(cl&&cl.name&&cl.name.nom)?cl.name.nom:(c.requestNo?'Заявка №'+c.requestNo+' (ФИО не указано)':'Доверитель не указан');
     const bits=[ct?ct.name.replace(' районный суд г. Москвы',''):'',
       STAGE[c.stage]||'', c.judge||''].filter(Boolean);
     const tags=[];
