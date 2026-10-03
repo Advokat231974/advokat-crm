@@ -23795,6 +23795,14 @@ details:not([open]) .row-actions{display:none}
         <div class="row-actions">
           <button class="btn ghost sm" id="saveAdvocate">Сохранить реквизиты</button>
         </div>
+        <h3 style="margin:18px 0 6px;font-size:15px">Подпись для документов</h3>
+        <p class="hint" style="margin:0 0 10px">Загрузите фото или скан своей подписи на белом листе (PNG или JPG). Фон станет прозрачным, и подпись подставится вместо линии в заявлении о выплате, жалобах, счёте, акте и сопроводительном. Подписи следователей и начальников не затрагиваются. Картинка хранится в зашифрованной базе.</p>
+        <div id="sigPreview" style="min-height:60px;margin-bottom:8px"></div>
+        <div class="row-actions">
+          <input type="file" id="sigFile" accept="image/png,image/jpeg" style="display:none">
+          <button class="btn ghost sm" id="sigPick">Загрузить подпись</button>
+          <button class="btn ghost sm" id="sigRemove" style="display:none">Удалить подпись</button>
+        </div>
       </div>
       <div class="sheet">
         <h2>АдвокатДок</h2>
@@ -24369,6 +24377,27 @@ const DocGen = (() => {
     });
   }
 
+  // Подпись адвоката: картинка из настроек (DB.settings.signature), если загружена,
+  // иначе обычная линия для подписи. Возвращает массив фрагментов абзаца.
+  function advSigRuns(prefix, underscores, suffix, size){
+    const {TextRun,ImageRun}=docx;
+    const sz=size||FONT_SIZE;
+    const runs=[];
+    if(prefix) runs.push(new TextRun({text:prefix,font:FONT,size:sz}));
+    const s=(typeof DB!=='undefined'&&DB&&DB.settings&&DB.settings.signature)||null;
+    let img=null;
+    if(s&&s.png){
+      try{
+        const bin=atob(s.png), u8=new Uint8Array(bin.length);
+        for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+        img=new ImageRun({type:'png',data:u8,transformation:{width:s.w,height:s.h}});
+      }catch(e){ img=null; }
+    }
+    runs.push(img||new TextRun({text:underscores,font:FONT,size:sz}));
+    if(suffix) runs.push(new TextRun({text:suffix,font:FONT,size:sz}));
+    return runs;
+  }
+
   function P(text,opts={}){
     const {Paragraph,TextRun,AlignmentType}=docx;
     const runs=[];
@@ -24644,7 +24673,7 @@ const DocGen = (() => {
     const signTable=new Table({
       rows:[new TableRow({children:[
         new TableCell({children:[new Paragraph({children:[new TextRun({text:`Дата ${todayStr}`,font:FONT,size:F})],spacing:{line:LINE}})],width:{size:2500,type:WidthType.DXA},borders:noBorders()}),
-        new TableCell({children:[new Paragraph({children:[new TextRun({text:`________________________   ${advShort}`,font:FONT,size:F})],alignment:AlignmentType.RIGHT,spacing:{line:LINE}})],width:{size:6500,type:WidthType.DXA},borders:noBorders()}),
+        new TableCell({children:[new Paragraph({children:advSigRuns('','________________________',`   ${advShort}`,F),alignment:AlignmentType.RIGHT,spacing:{line:LINE}})],width:{size:6500,type:WidthType.DXA},borders:noBorders()}),
       ]})], width:{size:9000,type:WidthType.DXA}, borders:noBorders(),
     });
     bodyParas.push(signTable);
@@ -24964,7 +24993,7 @@ const DocGen = (() => {
     const todayStr=`${String(today.getDate()).padStart(2,'0')}.${String(today.getMonth()+1).padStart(2,'0')}.${today.getFullYear()}`;
     children.push(new Table({rows:[new TableRow({children:[
       new TableCell({children:[new Paragraph({children:[new TextRun({text:`Дата ${todayStr}`,font:FONT,size:F})],spacing:{line:LINE,after:0}})],width:{size:3500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
-      new TableCell({children:[new Paragraph({children:[new TextRun({text:`_________________    / ${advShort} /`,font:FONT,size:F})],alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
+      new TableCell({children:[new Paragraph({children:advSigRuns('','_________________',`    / ${advShort} /`,F),alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
     ]})],width:{size:9000,type:WidthType.DXA},borders:noB()}));
 
     const doc=makeDoc(children);
@@ -25028,7 +25057,7 @@ const DocGen = (() => {
     const todayStr=`${String(today.getDate()).padStart(2,'0')}.${String(today.getMonth()+1).padStart(2,'0')}.${today.getFullYear()}`;
     children.push(new Table({rows:[new TableRow({children:[
       new TableCell({children:[new Paragraph({children:[new TextRun({text:`Дата ${todayStr}`,font:FONT,size:F})],spacing:{line:LINE,after:0}})],width:{size:3500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
-      new TableCell({children:[new Paragraph({children:[new TextRun({text:`_________________    / ${advShort} /`,font:FONT,size:F})],alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
+      new TableCell({children:[new Paragraph({children:advSigRuns('','_________________',`    / ${advShort} /`,F),alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
     ]})],width:{size:9000,type:WidthType.DXA},borders:noB()}));
     const doc=makeDoc(children);
     return {doc, filename:`Жалоба_ст125_${cleanFilename(cl.name.nom)}.docx`};
@@ -25090,7 +25119,7 @@ const DocGen = (() => {
     const todayStr=`${String(today.getDate()).padStart(2,'0')}.${String(today.getMonth()+1).padStart(2,'0')}.${today.getFullYear()}`;
     children.push(new Table({rows:[new TableRow({children:[
       new TableCell({children:[new Paragraph({children:[new TextRun({text:`Дата ${todayStr}`,font:FONT,size:F})],spacing:{line:LINE,after:0}})],width:{size:3500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
-      new TableCell({children:[new Paragraph({children:[new TextRun({text:`_________________    / ${advShort} /`,font:FONT,size:F})],alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
+      new TableCell({children:[new Paragraph({children:advSigRuns('','_________________',`    / ${advShort} /`,F),alignment:AlignmentType.RIGHT,spacing:{line:LINE,after:0}})],width:{size:5500,type:WidthType.DXA},borders:cellNoB(),verticalAlign:'bottom'}),
     ]})],width:{size:9000,type:WidthType.DXA},borders:noB()}));
     const doc=makeDoc(children);
     return {doc, filename:`Заявление_об_ускорении_${cleanFilename(cl.name.nom)}.docx`};
@@ -25142,7 +25171,7 @@ const DocGen = (() => {
     children.push(P(`Итого к выплате: ${Finance.rublesProp(total)}.`,{bold:true,spaceAfter:60}));
     children.push(P(`Прошу перечислить указанную сумму на расчётный счёт ${advocate.education||''}.`,{align:'justify',spaceAfter:200}));
     children.push(P(advocate.education||'',{bold:true}));
-    children.push(P(`Адвокат _________________ ${advInit}`,{spaceAfter:60}));
+    children.push(new Paragraph({children:advSigRuns('Адвокат ','_________________',` ${advInit}`,FONT_SIZE),spacing:{line:276,after:60}}));
     children.push(P('М.П.',{italics:true}));
     return {doc:makeDoc(children), filename:`Счёт_№${num}.docx`};
   }
@@ -25167,7 +25196,7 @@ const DocGen = (() => {
     const emptyP=()=>new Paragraph({children:[new TextRun({text:'',font:FONT,size:FONT_SIZE})]});
     children.push(new Table({rows:[new TableRow({children:[
       TC([new Paragraph({children:[new TextRun({text:advocate.education||'',font:FONT,size:FONT_SIZE})]}),emptyP(),emptyP(),
-        new Paragraph({children:[new TextRun({text:`Адвокат _________________ ${advInit}`,font:FONT,size:FONT_SIZE})]}),emptyP(),
+        new Paragraph({children:advSigRuns('Адвокат ','_________________',` ${advInit}`,FONT_SIZE)}),emptyP(),
         new Paragraph({children:[new TextRun({text:'М.П.',font:FONT,size:FONT_SIZE,italics:true})]})],{width:4500}),
       TC([new Paragraph({children:[new TextRun({text:uvd,font:FONT,size:FONT_SIZE})]}),emptyP(),emptyP(),
         new Paragraph({children:[new TextRun({text:'_________________',font:FONT,size:FONT_SIZE})]}),emptyP(),
@@ -25203,7 +25232,7 @@ const DocGen = (() => {
     rows.push(new TableRow({children:[TC('Итого:',{bold:true,align:'right',colSpan:4}),TC(String(listov),{bold:true,align:'center'})]}));
     children.push(new Table({rows,width:{size:9500,type:WidthType.DXA}}));
     children.push(P('',{spaceAfter:120}));
-    children.push(P(`Адвокат _________________ ${toShortFio(advocate.name)}`,{spaceBefore:160}));
+    children.push(new Paragraph({children:advSigRuns('Адвокат ','_________________',` ${toShortFio(advocate.name)}`,FONT_SIZE),spacing:{line:276,before:160,after:80}}));
     if(dateISO) children.push(P(formatDateRu(dateISO)));
     return {doc:makeDoc(children), filename:'Сопроводительное_письмо.docx'};
   }
@@ -25758,6 +25787,7 @@ $('menuBtn').onclick=()=>{
   renderSyncPanel();
   renderNotifyPanel();
   renderSearchPanel();
+  renderSigPreview();
   renderPendingList();
   show('viewMenu');
 };
@@ -26854,6 +26884,50 @@ async function doBackup(){
   toast('Копия сохранена. Держите её отдельно от компьютера.');
 }
 $('expBtn').onclick=doBackup;
+
+/* ---------- подпись адвоката картинкой ---------- */
+function renderSigPreview(){
+  const s=DB.settings.signature;
+  $('sigPreview').innerHTML=(s&&s.png)
+    ?`<img alt="Подпись" src="data:image/png;base64,${s.png}" style="height:${s.h}px;width:${s.w}px;background:#fff;border:1px dashed var(--line);padding:8px;border-radius:8px;box-sizing:content-box">`
+    :'<span class="hint">Подпись не загружена — в документах остаётся линия.</span>';
+  $('sigRemove').style.display=(s&&s.png)?'':'none';
+}
+$('sigPick').onclick=()=>$('sigFile').click();
+$('sigFile').onchange=async()=>{
+  const f=$('sigFile').files[0]; $('sigFile').value='';
+  if(!f) return;
+  try{
+    const url=URL.createObjectURL(f);
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error('Не удалось прочитать картинку'));i.src=url;});
+    URL.revokeObjectURL(url);
+    const k=Math.min(1,700/img.naturalWidth);
+    const cw=Math.max(1,Math.round(img.naturalWidth*k)), ch=Math.max(1,Math.round(img.naturalHeight*k));
+    const cv=document.createElement('canvas'); cv.width=cw; cv.height=ch;
+    const cx=cv.getContext('2d'); cx.drawImage(img,0,0,cw,ch);
+    const data=cx.getImageData(0,0,cw,ch), px=data.data;
+    let minX=cw,minY=ch,maxX=-1,maxY=-1;
+    for(let y=0;y<ch;y++) for(let x=0;x<cw;x++){
+      const i=(y*cw+x)*4, lum=0.299*px[i]+0.587*px[i+1]+0.114*px[i+2];
+      const a=lum>=225?0:(lum<=140?255:Math.round(255*(225-lum)/85));
+      px[i+3]=Math.min(px[i+3],a);
+      if(px[i+3]>40){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+    }
+    if(maxX<0) throw new Error('На картинке не найдено подписи (слишком светлая?)');
+    cx.putImageData(data,0,0);
+    const w0=maxX-minX+1, h0=maxY-minY+1;
+    const out=document.createElement('canvas'); out.width=w0; out.height=h0;
+    out.getContext('2d').drawImage(cv,minX,minY,w0,h0,0,0,w0,h0);
+    let H=44, W=Math.round(H*w0/h0);
+    if(W>170){ W=170; H=Math.round(W*h0/w0); }
+    DB.settings.signature={png:out.toDataURL('image/png').split(',')[1], w:W, h:H};
+    await saveDb(); renderSigPreview(); toast('Подпись сохранена');
+  }catch(e){ toast('Не удалось загрузить подпись: '+(e&&e.message||e)); }
+};
+$('sigRemove').onclick=async()=>{
+  if(!confirm('Удалить подпись? В документах снова будет линия.')) return;
+  DB.settings.signature=null; await saveDb(); renderSigPreview(); toast('Подпись удалена');
+};
 
 /* ---------- синхронизация с Google Диском (appDataFolder, раздел 3 ТЗ) ---------- */
 const GOOGLE_CLIENT_ID='342986901822-0r6iirgh07uara84fc3d26sdlonpba47.apps.googleusercontent.com';
