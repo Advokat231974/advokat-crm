@@ -23523,6 +23523,15 @@ details:not([open]) .row-actions{display:none}
         <div class="row-actions">
           <button class="btn ghost sm" id="openLk">Открыть в личном кабинете</button>
         </div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;font-weight:500">Дополнить из текста заявки</summary>
+          <p class="hint" style="margin:8px 0">Откройте заявку в личном кабинете, выделите весь текст страницы, скопируйте и вставьте сюда. Будут заполнены только пустые поля карточки — то, что уже введено, не изменится. Потом нажмите «Сохранить».</p>
+          <textarea id="fromText" placeholder="Вставьте текст страницы заявки из личного кабинета" style="min-height:120px"></textarea>
+          <div class="row-actions" style="margin-top:8px">
+            <button class="btn sm" id="fromTextApply">Заполнить пустые поля</button>
+          </div>
+          <div id="fromTextResult" class="hint" style="margin-top:8px"></div>
+        </details>
       </div>
 
       <div class="sheet">
@@ -26800,11 +26809,9 @@ function parseAPMText(text){
 
 $('clearRaw').onclick=()=>{$('rawText').value='';$('parseResult').innerHTML='';};
 
-$('parseBtn').onclick=()=>{
-  const raw=$('rawText').value.trim();
-  if(!raw){toast('Вставьте текст заявки');return;}
-  // Разбираем обоими парсерами: письмо палаты (Parser) и текст личного кабинета
-  // (parseAPMText). Данные из кабинета богаче — они имеют приоритет там, где есть.
+// Разбираем обоими парсерами: письмо палаты (Parser) и текст личного кабинета
+// (parseAPMText). Данные из кабинета богаче — они имеют приоритет там, где есть.
+function parseRequestText(raw){
   const email=Parser.parse(raw);
   const apm=parseAPMText(raw);
   const r={
@@ -26829,6 +26836,15 @@ $('parseBtn').onclick=()=>{
   };
   if(!r.requestNo) r.warnings.push('не найден номер заявки');
   if(!r.fio) r.warnings.push('ФИО подзащитного в тексте отсутствует');
+  r.podDr=apm.podDr||'';
+  return r;
+}
+
+$('parseBtn').onclick=()=>{
+  const raw=$('rawText').value.trim();
+  if(!raw){toast('Вставьте текст заявки');return;}
+  const r=parseRequestText(raw);
+  const apm={podDr:r.podDr};
   draft=r;
 
   const dup=r.requestNo?DB.cases.find(c=>c.requestNo===r.requestNo):null;
@@ -26862,6 +26878,38 @@ $('parseBtn').onclick=()=>{
       </div>
     </div>`;
   $('toCase').onclick=()=>openCase(null);
+};
+
+// «Дополнить из текста заявки» в карточке: заполняет только ПУСТЫЕ поля формы.
+$('fromTextApply').onclick=()=>{
+  const raw=$('fromText').value.trim();
+  if(!raw){ toast('Вставьте текст заявки'); return; }
+  const r=parseRequestText(raw);
+  const filled=[], kept=[];
+  const put=(id,val,label)=>{
+    if(!val) return;
+    const el=$(id);
+    if(el.value.trim()){ if(el.value.trim()!==String(val).trim()) kept.push(label); return; }
+    el.value=val; filled.push(label);
+  };
+  put('cName',r.fio,'ФИО подзащитного');
+  put('cBirth',r.birthDate,'дата рождения');
+  put('cBirthPlace',r.birthPlace,'место рождения');
+  put('fNumber',r.caseNumber,'номер дела');
+  put('fArticles',r.articles,'статья');
+  put('fRequestNo',r.requestNo,'номер заявки');
+  put('fRequestUrl',r.url,'ссылка');
+  put('fInvPhone',r.phone,'телефон следователя');
+  const organWasEmpty=!$('fOrganFull').value.trim();
+  put('fOrganFull',r.organFull,'орган');
+  put('fDolzhFio',r.dolzhFio,'следователь/дознаватель');
+  if(organWasEmpty && r.dolzh && $('fDolzh').value!==r.dolzh){ $('fDolzh').value=r.dolzh; filled.push('следствие/дознание'); }
+  if(!$('fCourt').value && r.district){ const g=guessCourt(r.district); if(g){ $('fCourt').value=g; filled.push('суд'); } }
+  syncNachLabels(); refreshStaffLists(); showDecl(); renderCaseSummary(editingId?DB.cases.find(x=>x.id===editingId):null, null);
+  $('fromTextResult').innerHTML=
+    (filled.length?'Заполнено: <b>'+esc(filled.join(', '))+'</b>.':'Пустых полей, которые можно заполнить, не нашлось.')+
+    (kept.length?'<br>Уже было введено и отличается от текста заявки (не менялось): '+esc(kept.join(', '))+'.':'')+
+    (filled.length?'<br>Проверьте и нажмите «Сохранить».':'');
 };
 
 /* =====================================================================
