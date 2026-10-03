@@ -27189,10 +27189,17 @@ function caseSearchRow(c){
 
 async function buildIndexPayload(){
   const plain=[], sensitiveRows=[], sensitiveIndex=[];
-  const busySet=new Set();
+  const busySet=new Set(), days=[];
   for(const c of DB.cases){
     if(c.status==='archived') continue;
-    (c.finance&&c.finance.appointment&&c.finance.appointment.days||[]).forEach(d=>{ if(d.date) busySet.add(d.date); });
+    (c.finance&&c.finance.appointment&&c.finance.appointment.days||[]).forEach(d=>{
+      if(!d.date) return;
+      busySet.add(d.date);
+      const cl=clientOf(c), ct=courtForCase(c);
+      days.push({date:d.date, time:d.time||'',
+        who:c.sensitive?'защищённое дело':((cl&&cl.name&&cl.name.nom)||(c.requestNo?'заявка №'+c.requestNo:'без ФИО')),
+        court:(!c.sensitive&&ct)?ct.name.replace(' районный суд г. Москвы',''):''});
+    });
     if(c.sensitive){
       const row=caseSearchRow(c);
       sensitiveRows.push(row);
@@ -27203,7 +27210,7 @@ async function buildIndexPayload(){
   }
   const sensitiveBlob = sensitiveRows.length ? await Crypt.seal({cases:sensitiveRows}, KEY) : null;
   if(sensitiveBlob) sensitiveBlob.salt=Crypt.b64(SALT);
-  return {plain, sensitiveIndex, sensitiveBlob, busyDates:Array.from(busySet)};
+  return {plain, sensitiveIndex, sensitiveBlob, busyDates:Array.from(busySet), days};
 }
 
 async function pushCaseIndex(){
